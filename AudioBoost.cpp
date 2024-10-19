@@ -2,9 +2,13 @@
 // equivalent to algorithms provided by me to be used in
 // BeSweet (c) DSPguru and HeadAC3he (c) DarkAvenger
 
-#include <windows.h>
+#ifdef AVS_WINDOWS
+    #include <windows.h>
+#else
+    #include <avisynth/avs/posix.h>
+#endif
 #include <math.h>
-#include "avisynth.h"
+#include <avisynth/avisynth.h>
 
 #ifndef M_PI
 #define M_PI 3.1415926535897932384626433832795028842
