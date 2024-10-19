@@ -1,5 +1,5 @@
 # AudioBoost plugin for AviSynth
-### (c) 2024, Mario \*LigH\* Rohkrämer
+### (c) 2024, Mario \*LigH\* Rohkrämer, contributions from Asd-g and qyot27
 
 ## Purpose
 
@@ -32,4 +32,4 @@ If enabled (by default it is), the curve gets scaled so that an input audio samp
 
 <hr>
 
-*Note: This project may not correctly build in MinGW with GCC, I sadly have to recommend MSVC.*
+*Note: C++ interface version requires the same compiler family as the one avisynth.dll was built with; C interface version is more cross-compiler compatible.*
