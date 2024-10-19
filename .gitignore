@@ -1,0 +1,69 @@
+build/*
+CMakeCache.txt
+CMakeFiles/*
+
+#cmake generated files
+*.sln
+*.vcxproj
+*.vcxproj.filters
+cmake_install.cmake
+generate.stamp
+generate.stamp.depend
+
+# User-specific files
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Build results
+[Dd]ebug/
+[Dd]ebugPublic/
+[Rr]elease/
+[Rr]eleases/
+[Rr]elWithDebInfo/
+x64/
+x86/
+bld/
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+
+# Visual C++ cache files
+ipch/
+*.aps
+*.ncb
+*.opendb
+*.opensdf
+*.sdf
+*.cachefile
+*.VC.db
+*.VC.VC.opendb
+*.VC.db-shm
+*.VC.db-wal
+
+# Visual Studio profiler
+*.psess
+*.vsp
+*.vspx
+*.sap
+
+#Visual Studio other
+.vs/
+
+*.rej
+*.orig
+*_BACKUP_*
+*_BASE_*
+*_LOCAL_*
+*_REMOTE_*
+
+# Assorted build generator files
+Makefile
+build.ninja
+rules.ninja
+.ninja_deps
+.ninja_log
+cmake_uninstall.cmake
+*.so
+*.dll
