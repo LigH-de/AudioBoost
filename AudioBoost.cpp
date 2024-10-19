@@ -2,9 +2,13 @@
 // equivalent to algorithms provided by me to be used in
 // BeSweet (c) DSPguru and HeadAC3he (c) DarkAvenger
 
-#include <windows.h>
+#ifdef AVS_WINDOWS
+    #include <windows.h>
+#else
+    #include <avisynth/avs/posix.h>
+#endif
 #include <math.h>
-#include "avisynth.h"
+#include <avisynth/avisynth.h>
 
 #ifndef M_PI
 #define M_PI 3.1415926535897932384626433832795028842
@@ -15,7 +19,7 @@
 class AudioBoost : public GenericVideoFilter {
 public:
   AudioBoost(PClip _child, float _fBoost, float _fLimit, int _iCurve, bool _bNormalize);
-  void __stdcall GetAudio(void* buf, __int64 start, __int64 count, IScriptEnvironment* env);
+  void __stdcall GetAudio(void* buf, int64_t start, int64_t count, IScriptEnvironment* env);
 private:
   float fBoost, fLimit;
   int iCurve;
@@ -33,7 +37,7 @@ AudioBoost::AudioBoost(PClip _child, float _fBoost, float _fLimit, int _iCurve, 
   bNormalize = _bNormalize;
 }
 
-void __stdcall AudioBoost::GetAudio(void* buf, __int64 start, __int64 count, IScriptEnvironment* env) {
+void __stdcall AudioBoost::GetAudio(void* buf, int64_t start, int64_t count, IScriptEnvironment* env) {
   child->GetAudio(buf, start, count, env);
   int channels = vi.AudioChannels();
   SFLOAT val, maxval;
