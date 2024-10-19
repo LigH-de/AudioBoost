@@ -1,7 +1,7 @@
 #include <cmath>
 #include <string>
 
-#include "avisynth_c.h"
+#include <avisynth/avisynth_c.h>
 
 static constexpr float HalfPi{ 3.1415926535897932384626433832795028842f / 2.0f };
 
@@ -13,7 +13,7 @@ struct AudioBoost
 };
 
 template <int iCurve, bool bNormalize>
-static int __stdcall avs_get_audio_AudioBoost(AVS_FilterInfo* fi, void* buf, int64_t start, int64_t count)
+static int AVSC_CC avs_get_audio_AudioBoost(AVS_FilterInfo* fi, void* buf, int64_t start, int64_t count)
 {
     AudioBoost* d{ reinterpret_cast<AudioBoost*>(fi->user_data) };
 
@@ -61,14 +61,14 @@ static int __stdcall avs_get_audio_AudioBoost(AVS_FilterInfo* fi, void* buf, int
     return 0;
 }
 
-static void __stdcall AVSC_CC free_AudioBoost(AVS_FilterInfo* fi)
+static void AVSC_CC free_AudioBoost(AVS_FilterInfo* fi)
 {
     AudioBoost* d{ static_cast<AudioBoost*>(fi->user_data) };
 
     delete d;
 }
 
-static int __stdcall AVSC_CC set_cache_hints_AudioBoost(AVS_FilterInfo* fi, int cachehints, int frame_range)
+static int AVSC_CC set_cache_hints_AudioBoost(AVS_FilterInfo* fi, int cachehints, int frame_range)
 {
     return cachehints == AVS_CACHE_GET_MTMODE ? 1 : 0;
 }
