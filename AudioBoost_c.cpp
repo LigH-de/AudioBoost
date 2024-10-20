@@ -1,6 +1,8 @@
+#define NOMINMAX
 #include <math.h>
+#include <algorithm>
 
-#include <avisynth/avisynth_c.h>
+#include <avisynth_c.h>
 
 static constexpr float HalfPi{ 3.1415926535897932384626433832795028842f / 2.0f };
 
