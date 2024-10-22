@@ -5,10 +5,10 @@
 #ifdef AVS_WINDOWS
     #include <windows.h>
 #else
-    #include <avisynth/avs/posix.h>
+    #include <avs/posix.h>
 #endif
-#include <math.h>
-#include <avisynth/avisynth.h>
+#include <cmath>
+#include <avisynth.h>
 
 #ifndef M_PI
 #define M_PI 3.1415926535897932384626433832795028842

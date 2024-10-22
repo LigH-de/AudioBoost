@@ -1,7 +1,8 @@
-#include <cmath>
-#include <string>
+#define NOMINMAX
+#include <math.h>
+#include <algorithm>
 
-#include <avisynth/avisynth_c.h>
+#include <avisynth_c.h>
 
 static constexpr float HalfPi{ 3.1415926535897932384626433832795028842f / 2.0f };
 
@@ -127,7 +128,7 @@ static AVS_Value AVSC_CC Create_AudioBoost(AVS_ScriptEnvironment* env, AVS_Value
     {
         case 0: d->maxval = 1.0f; break;
         case 1: d->maxval = std::tanh(fBoost); break;
-        case 2: d->maxval = 1.0f / std::sqrtf(1.0f + fBoost * fBoost); break;
+        case 2: d->maxval = 1.0f / sqrtf(1.0f + fBoost * fBoost); break;
         case 3: d->maxval = std::atan(fBoost * HalfPi) / HalfPi; break;
         default: d->maxval = 1.0f / (1.0f + fabs(fBoost)); break;
     }
