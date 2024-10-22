@@ -1,6 +1,9 @@
-cmake_minimum_required(VERSION 3.5)
+cmake_minimum_required(VERSION 3.7)
 
 project(AudioBoost VERSION 0.17 LANGUAGES CXX)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED TRUE)
+set(CMAKE_CXX_EXTENSIONS FALSE)
 
 if (WIN32)
     set(CoreNameCPP "AudioBoost-CPP")
@@ -13,6 +16,11 @@ endif()
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(avisynth REQUIRED avisynth)
 
+include(CMakePrintHelpers)
+
+cmake_print_variables(avisynth_INCLUDE_DIRS)
+cmake_print_variables(avisynth_LINK_LIBRARIES)
+
 option(ENABLE_CPP_PLUGIN "Build AviSynth C++ interface plugin" OFF)
 option(ENABLE_C_PLUGIN "Build AviSynth C interface plugin" ON)
 
@@ -22,7 +30,7 @@ if(ENABLE_CPP_PLUGIN)
 
     set_target_properties(${PROJECTLIB} PROPERTIES OUTPUT_NAME ${PROJECTLIB})
 
-    target_include_directories(${PROJECTLIB} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} ${AVISYNTH_INCLUDE_DIRS})
+    target_include_directories(${PROJECTLIB} PUBLIC ${avisynth_INCLUDE_DIRS})
 
     if (MINGW)
         set_target_properties(${PROJECTLIB} PROPERTIES PREFIX "")
@@ -36,8 +44,8 @@ if(ENABLE_C_PLUGIN)
 
     set_target_properties(${PROJECTLIB} PROPERTIES OUTPUT_NAME ${PROJECTLIB})
 
-    target_include_directories(${PROJECTLIB} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} ${AVISYNTH_INCLUDE_DIRS})
-    target_link_libraries(${PROJECTLIB} avisynth)
+    target_include_directories(${PROJECTLIB} PUBLIC ${avisynth_INCLUDE_DIRS})
+    target_link_libraries(${PROJECTLIB} ${avisynth_LINK_LIBRARIES})
 
     if (MINGW)
         set_target_properties(${PROJECTLIB} PROPERTIES PREFIX "")
