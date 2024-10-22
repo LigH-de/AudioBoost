@@ -1,4 +1,4 @@
-# AudioBoost plugin for AviSynth
+# AudioBoost: Soft clipping amplifier plugin for AviSynth
 ### (c) 2024, Mario \*LigH\* Rohkrämer, contributions from Asd-g and qyot27
 
 ## Purpose
