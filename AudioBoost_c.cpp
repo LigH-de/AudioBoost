@@ -1,5 +1,9 @@
 #define NOMINMAX
-#include <math.h>
+#ifdef _MSC_VER
+    #include <cmath>
+#else
+    #include <math.h>
+#endif
 #include <algorithm>
 
 #include <avisynth_c.h>
