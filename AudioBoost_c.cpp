@@ -1,11 +1,4 @@
-#define NOMINMAX
-#ifdef _MSC_VER
-    #include <cmath>
-#else
-    #include <math.h>
-#endif
-#include <algorithm>
-
+#include <cmath>
 #include <avisynth_c.h>
 
 static constexpr float HalfPi{ 3.1415926535897932384626433832795028842f / 2.0f };
@@ -40,20 +33,20 @@ static int AVSC_CC avs_get_audio_AudioBoost(AVS_FilterInfo* fi, void* buf, int64
             {
                 if constexpr (iCurve == 0)
                 {
-                    float tmp{ std::min(std::fabs(samples[i * channels + j] * fBoost), 1.0f) };
+                    float tmp{ std::min(std::fabsf(samples[i * channels + j] * fBoost), 1.0f) };
                     return (samples[i * channels + j] < 0.0f) ? -tmp : tmp;
                 }
                 else if constexpr (iCurve == 1)
-                    return std::tanh(samples[i * channels + j] * fBoost) * fLimit;
+                    return std::tanhf(samples[i * channels + j] * fBoost) * fLimit;
                 else if constexpr (iCurve == 2)
                 {
                     const float tmp{ samples[i * channels + j] * fBoost };
-                    return 1.0f / sqrt(1.0f + tmp * tmp) * fLimit;
+                    return 1.0f / std::sqrtf(1.0f + tmp * tmp) * fLimit;
                 }
                 else if constexpr (iCurve == 3)
-                    return std::atan(samples[i * channels + j] * fBoost * HalfPi) / HalfPi * fLimit;
+                    return std::atanf(samples[i * channels + j] * fBoost * HalfPi) / HalfPi * fLimit;
                 else
-                    return 1.0f / (1.0f + fabs(samples[i * channels + j] * fBoost)) * fLimit;
+                    return 1.0f / (1.0f + std::fabsf(samples[i * channels + j] * fBoost)) * fLimit;
             }() };
 
             if (bNormalize)
