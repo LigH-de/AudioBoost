@@ -1,5 +1,5 @@
 # AudioBoost: Soft clipping amplifier plugin for AviSynth
-### (c) 2024, Mario \*LigH\* Rohkrämer, contributions from Asd-g and qyot27
+### (c) 2024-2026, Mario \*LigH\* Rohkrämer, contributions from Asd-g and qyot27
 
 ## Purpose
 
@@ -25,6 +25,7 @@ limiting factor the amplified and clipped samples are multiplied with before the
 * **2:** square ratio sigmoid curve, softer clipping
 * **3:** scaled arcus tangent curve, very soft clipping
 * **4:** absolute ratio sigmoid curve, softest clipping
+* ***-1:** double square ratio sigmoid curve, harder clipping, experimental*
 
 **norm**<br>
 `bool {true}`<br>
