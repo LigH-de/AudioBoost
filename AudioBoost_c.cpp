@@ -1,3 +1,7 @@
+// AudioBoost plugin for AviSynth (c) 2024-2026, Mario *LigH* Rohkrämer
+// equivalent to algorithms provided by me to be used in
+// BeSweet (c) DSPguru and HeadAC3he (c) DarkAvenger
+
 #include <algorithm>
 #include <cmath>
 #include <avisynth_c.h>
@@ -32,22 +36,31 @@ static int AVSC_CC avs_get_audio_AudioBoost(AVS_FilterInfo* fi, void* buf, int64
         {
             float val{ [&]()
             {
-                if constexpr (iCurve == 0)
-                {
-                    float tmp{ std::min(std::fabsf(samples[i * channels + j] * fBoost), 1.0f) };
-                    return (samples[i * channels + j] < 0.0f) ? -tmp : tmp;
+                const float sampleval{ samples[i * channels + j] };
+                const float boostedval{ sampleval * fBoost };
+                const float clampedval{ std::min(std::fabsf(boostedval), 1.0f) };
+                switch (iCurve) {
+                    case 0: // hard limit
+                        return (sampleval < 0.0f) ? -clampedval : clampedval;
+                        break;
+                    case 1: // hyperbolic tangens
+                        return std::tanhf(boostedval) * fLimit;
+                        break;
+                    case 2: // square sigmoid
+                        return boostedval / std::sqrtf(1.0f + boostedval * boostedval) * fLimit;
+                        break;
+                    case 3: // scaled arcus tangens
+                        return std::atanf(boostedval * HalfPi) / HalfPi * fLimit;
+                        break;
+                    case 4: // absolute ratio sigmoid
+                        return boostedval / (1.0f + std::fabsf(boostedval)) * fLimit;
+                        break;
+                    case -1: // double square sigmoid
+                        return boostedval / std::sqrtf(std::sqrtf(1.0f + boostedval * boostedval * boostedval * boostedval)) * fLimit;
+                        break;
+                    default: // passthrough fallback
+                        return sampleval;
                 }
-                else if constexpr (iCurve == 1)
-                    return std::tanhf(samples[i * channels + j] * fBoost) * fLimit;
-                else if constexpr (iCurve == 2)
-                {
-                    const float tmp{ samples[i * channels + j] * fBoost };
-                    return 1.0f / std::sqrtf(1.0f + tmp * tmp) * fLimit;
-                }
-                else if constexpr (iCurve == 3)
-                    return std::atanf(samples[i * channels + j] * fBoost * HalfPi) / HalfPi * fLimit;
-                else
-                    return 1.0f / (1.0f + std::fabsf(samples[i * channels + j] * fBoost)) * fLimit;
             }() };
 
             if (bNormalize)
@@ -117,18 +130,19 @@ static AVS_Value AVSC_CC Create_AudioBoost(AVS_ScriptEnvironment* env, AVS_Value
     d->fLimit = fLimit;
 
     const int iCurve{ avs_defined(avs_array_elt(args, Curve)) ? avs_as_int(avs_array_elt(args, Curve)) : 1 };
-    if ((iCurve < 0) || (iCurve > 4))
+    if ((iCurve < -1) || (iCurve > 4))
         return set_error("AudioBoost: curve index most be in a range 0 .. 4 (default is 1).");
 
     const bool bNormalize = avs_defined(avs_array_elt(args, Norm)) ? !!avs_as_bool(avs_array_elt(args, Norm)) : true;
 
     switch (iCurve)
     {
-        case 0: d->maxval = 1.0f; break;
         case 1: d->maxval = std::tanh(fBoost); break;
-        case 2: d->maxval = 1.0f / sqrtf(1.0f + fBoost * fBoost); break;
+        case 2: d->maxval = fBoost / sqrtf(1.0f + fBoost * fBoost); break;
         case 3: d->maxval = std::atan(fBoost * HalfPi) / HalfPi; break;
-        default: d->maxval = 1.0f / (1.0f + fabs(fBoost)); break;
+        case 4: d->maxval = 1.0f / (1.0f + fabs(fBoost)); break;
+        case -1: d->maxval = fBoost / sqrtf(sqrtf(1.0f + fBoost * fBoost * fBoost * fBoost)); break;
+        default: d->maxval = 1.0f;
     }
 
     AVS_Value v{ avs_new_value_clip(clip) };
@@ -139,11 +153,12 @@ static AVS_Value AVSC_CC Create_AudioBoost(AVS_ScriptEnvironment* env, AVS_Value
 
     switch (iCurve)
     {
-        case 0: fi->get_audio = (bNormalize) ? avs_get_audio_AudioBoost<0, true> : avs_get_audio_AudioBoost<0, false>; break;
+        case -1: fi->get_audio = (bNormalize) ? avs_get_audio_AudioBoost<-1, true> : avs_get_audio_AudioBoost<-1, false>; break;
         case 1: fi->get_audio = (bNormalize) ? avs_get_audio_AudioBoost<1, true> : avs_get_audio_AudioBoost<1, false>; break;
         case 2: fi->get_audio = (bNormalize) ? avs_get_audio_AudioBoost<2, true> : avs_get_audio_AudioBoost<2, false>; break;
         case 3: fi->get_audio = (bNormalize) ? avs_get_audio_AudioBoost<3, true> : avs_get_audio_AudioBoost<3, false>; break;
-        default: fi->get_audio = (bNormalize) ? avs_get_audio_AudioBoost<4, true> : avs_get_audio_AudioBoost<4, false>; break;
+        case 4: fi->get_audio = (bNormalize) ? avs_get_audio_AudioBoost<4, true> : avs_get_audio_AudioBoost<4, false>; break;
+        default: fi->get_audio = (bNormalize) ? avs_get_audio_AudioBoost<0, true> : avs_get_audio_AudioBoost<0, false>;
     }
 
     avs_release_clip(clip);
