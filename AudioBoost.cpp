@@ -1,4 +1,4 @@
-// AudioBoost plugin for AviSynth (c) 2024, Mario *LigH* Rohkr‰mer
+// AudioBoost plugin for AviSynth (c) 2024-2026, Mario *LigH* Rohkr√§mer
 // equivalent to algorithms provided by me to be used in
 // BeSweet (c) DSPguru and HeadAC3he (c) DarkAvenger
 
@@ -28,6 +28,7 @@ private:
   SFLOAT ScaledArcTan(SFLOAT val);
   SFLOAT LinearRatioSigmoid(SFLOAT val);
   SFLOAT SquareRatioSigmoid(SFLOAT val);
+  SFLOAT DoubleSquareRatioSigmoid(SFLOAT val);
 };
 
 AudioBoost::AudioBoost(PClip _child, float _fBoost, float _fLimit, int _iCurve, bool _bNormalize) : GenericVideoFilter(_child) {
@@ -43,8 +44,8 @@ void __stdcall AudioBoost::GetAudio(void* buf, int64_t start, int64_t count, ISc
   SFLOAT val, maxval;
 
   switch (iCurve) {
-    case 0:
-      maxval = 1.0f;
+    case -1:
+      maxval = DoubleSquareRatioSigmoid(fBoost);
       break;
     case 1:
       maxval = TanH(fBoost);
@@ -58,12 +59,17 @@ void __stdcall AudioBoost::GetAudio(void* buf, int64_t start, int64_t count, ISc
     case 4:
       maxval = LinearRatioSigmoid(fBoost);
       break;
+    default:
+      maxval = 1.0f;
   }
   if (vi.SampleType() == SAMPLE_FLOAT) {
     SFLOAT* samples = (SFLOAT*)buf;
     for (int i=0; i< count; i++) {
       for(int j=0;j< channels;j++) {
         switch (iCurve) {
+          case -1:
+            val = DoubleSquareRatioSigmoid(samples[i*channels+j] * fBoost) * fLimit;
+            break;
           case 0:
             val = fabs(samples[i*channels+j]*fBoost);
             if (val > 1.0f) val = 1.0f;
@@ -81,6 +87,8 @@ void __stdcall AudioBoost::GetAudio(void* buf, int64_t start, int64_t count, ISc
           case 4:
             val = LinearRatioSigmoid(samples[i*channels+j]*fBoost)*fLimit;
             break;
+          default:
+            val = samples[i*channels+j];
         }
         if (bNormalize) val /= maxval;
         samples[i*channels+j] = val*fLimit;
@@ -99,11 +107,15 @@ SFLOAT AudioBoost::ScaledArcTan(SFLOAT val) {
 }
 
 SFLOAT AudioBoost::LinearRatioSigmoid(SFLOAT val) {
-  return 1.0f/(1.0f+fabs(val));
+  return val/(1.0f+fabs(val));
 }
 
 SFLOAT AudioBoost::SquareRatioSigmoid(SFLOAT val) {
-  return 1.0f/sqrt(1.0f+val*val);
+  return val/sqrt(1.0f+val*val);
+}
+
+SFLOAT AudioBoost::DoubleSquareRatioSigmoid(SFLOAT val) {
+    return val/sqrt(sqrt(1.0f+val*val*val*val));
 }
 
 AVSValue __cdecl Create_AudioBoost(AVSValue args, void*, IScriptEnvironment* env) {
@@ -124,7 +136,7 @@ AVSValue __cdecl Create_AudioBoost(AVSValue args, void*, IScriptEnvironment* env
     env->ThrowError("Limit factor is outside a sensible range [0.1 .. 1.0] (use e.g. Amplify or Normalize as post processing instead).");
 
   int iCurve = args[3].AsInt(1);
-  if((iCurve < 0) || (iCurve > 4))
+  if((iCurve < -1) || (iCurve > 4))
     env->ThrowError("Curve index most be in a range 0 .. 4 (default is 1).");
 
   return new AudioBoost(clip, fBoost, fLimit, iCurve, args[4].AsBool(true));
