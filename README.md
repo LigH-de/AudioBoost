@@ -26,6 +26,9 @@ limiting factor the amplified and clipped samples are multiplied with before the
 * **3:** scaled arcus tangent curve, very soft clipping
 * **4:** absolute ratio sigmoid curve, softest clipping
 * ***-1:** double square ratio sigmoid curve, harder clipping, experimental*
+* ***-2:** approx. error function sigmoid curve, harder clipping, experimental*
+
+![AudioBoost curves](https://www.ligh.de/pics/Sigmoids.png)
 
 **norm**<br>
 `bool {true}`<br>
