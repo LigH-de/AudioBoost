@@ -15,6 +15,36 @@ struct AudioBoost
     float maxval;
 };
 
+inline static float fast_erf(float x) {
+    // scaling correction
+    x *= 0.886644;
+    // erf(-x) = -erf(x)
+    float sign = (x < 0.0) ? -1.0 : 1.0;
+    x = std::abs(x);
+
+    // Fast fail for large numbers where erf(x) asymptotically reaches 1.0
+    // exp(-x*x) underflows to 0 near x = 6.0 anyway
+    if (x >= 6.0) {
+        return sign;
+    }
+
+    // Constants for the approximation
+    const float p = 0.3275911;
+    const float a1 = 0.254829592;
+    const float a2 = -0.284496736;
+    const float a3 = 1.421413741;
+    const float a4 = -1.453152027;
+    const float a5 = 1.061405429;
+
+    float t = 1.0 / (1.0 + p * x);
+
+    // Evaluate polynomial using Horner's method: a1*t + a2*t^2 + ...
+    float poly = t * (a1 + t * (a2 + t * (a3 + t * (a4 + t * a5))));
+
+    // Calculate final value
+    return sign * (1.0 - poly * std::exp(-x * x));
+}
+
 template <int iCurve, bool bNormalize>
 static int AVSC_CC avs_get_audio_AudioBoost(AVS_FilterInfo* fi, void* buf, int64_t start, int64_t count)
 {
@@ -46,7 +76,7 @@ static int AVSC_CC avs_get_audio_AudioBoost(AVS_FilterInfo* fi, void* buf, int64
                     case 1: // hyperbolic tangens
                         return std::tanhf(boostedval) * fLimit;
                         break;
-                    case 2: // square sigmoid
+                    case 2: // square ratio sigmoid
                         return boostedval / std::sqrtf(1.0f + boostedval * boostedval) * fLimit;
                         break;
                     case 3: // scaled arcus tangens
@@ -55,8 +85,11 @@ static int AVSC_CC avs_get_audio_AudioBoost(AVS_FilterInfo* fi, void* buf, int64
                     case 4: // absolute ratio sigmoid
                         return boostedval / (1.0f + std::fabsf(boostedval)) * fLimit;
                         break;
-                    case -1: // double square sigmoid
+                    case -1: // double square ratio sigmoid
                         return boostedval / std::sqrtf(std::sqrtf(1.0f + boostedval * boostedval * boostedval * boostedval)) * fLimit;
+                        break;
+                    case -2: // approximated error function
+                        return fast_erf(boostedval) * fLimit;
                         break;
                     default: // passthrough fallback
                         return sampleval;
@@ -130,7 +163,7 @@ static AVS_Value AVSC_CC Create_AudioBoost(AVS_ScriptEnvironment* env, AVS_Value
     d->fLimit = fLimit;
 
     const int iCurve{ avs_defined(avs_array_elt(args, Curve)) ? avs_as_int(avs_array_elt(args, Curve)) : 1 };
-    if ((iCurve < -1) || (iCurve > 4))
+    if ((iCurve < -2) || (iCurve > 4))
         return set_error("AudioBoost: curve index most be in a range 0 .. 4 (default is 1).");
 
     const bool bNormalize = avs_defined(avs_array_elt(args, Norm)) ? !!avs_as_bool(avs_array_elt(args, Norm)) : true;
@@ -142,6 +175,7 @@ static AVS_Value AVSC_CC Create_AudioBoost(AVS_ScriptEnvironment* env, AVS_Value
         case 3: d->maxval = std::atan(fBoost * HalfPi) / HalfPi; break;
         case 4: d->maxval = 1.0f / (1.0f + fabs(fBoost)); break;
         case -1: d->maxval = fBoost / sqrtf(sqrtf(1.0f + fBoost * fBoost * fBoost * fBoost)); break;
+        case -2: d->maxval = fast_erf(fBoost); break;
         default: d->maxval = 1.0f;
     }
 
@@ -153,6 +187,7 @@ static AVS_Value AVSC_CC Create_AudioBoost(AVS_ScriptEnvironment* env, AVS_Value
 
     switch (iCurve)
     {
+        case -2: fi->get_audio = (bNormalize) ? avs_get_audio_AudioBoost<-2, true> : avs_get_audio_AudioBoost<-2, false>; break;
         case -1: fi->get_audio = (bNormalize) ? avs_get_audio_AudioBoost<-1, true> : avs_get_audio_AudioBoost<-1, false>; break;
         case 1: fi->get_audio = (bNormalize) ? avs_get_audio_AudioBoost<1, true> : avs_get_audio_AudioBoost<1, false>; break;
         case 2: fi->get_audio = (bNormalize) ? avs_get_audio_AudioBoost<2, true> : avs_get_audio_AudioBoost<2, false>; break;
