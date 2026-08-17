@@ -8,6 +8,7 @@
     #include <avs/posix.h>
 #endif
 #include <cmath>
+#include <algorithm>
 #include <avisynth.h>
 
 #ifndef M_PI
@@ -15,6 +16,36 @@
 #endif
 
 #define HalfPi M_PI/2.0f
+
+inline static double fast_erf(double x) {
+    // scaling correction
+    x *= 0.886644;
+    // erf(-x) = -erf(x)
+    double sign = (x < 0.0) ? -1.0 : 1.0;
+    x = std::abs(x);
+
+    // Fast fail for large numbers where erf(x) asymptotically reaches 1.0
+    // exp(-x*x) underflows to 0 near x = 6.0 anyway
+    if (x >= 6.0) {
+        return sign;
+    }
+
+    // Constants for the approximation
+    const double p = 0.3275911;
+    const double a1 = 0.254829592;
+    const double a2 = -0.284496736;
+    const double a3 = 1.421413741;
+    const double a4 = -1.453152027;
+    const double a5 = 1.061405429;
+
+    double t = 1.0 / (1.0 + p * x);
+
+    // Evaluate polynomial using Horner's method: a1*t + a2*t^2 + ...
+    double poly = t * (a1 + t * (a2 + t * (a3 + t * (a4 + t * a5))));
+
+    // Calculate final value
+    return sign * (1.0 - poly * std::exp(-x * x));
+}
 
 class AudioBoost : public GenericVideoFilter {
 public:
@@ -29,6 +60,7 @@ private:
   SFLOAT LinearRatioSigmoid(SFLOAT val);
   SFLOAT SquareRatioSigmoid(SFLOAT val);
   SFLOAT DoubleSquareRatioSigmoid(SFLOAT val);
+  SFLOAT ErrorFunctionSigmoid(SFLOAT val);
 };
 
 AudioBoost::AudioBoost(PClip _child, float _fBoost, float _fLimit, int _iCurve, bool _bNormalize) : GenericVideoFilter(_child) {
@@ -44,7 +76,10 @@ void __stdcall AudioBoost::GetAudio(void* buf, int64_t start, int64_t count, ISc
   SFLOAT val, maxval;
 
   switch (iCurve) {
-    case -1:
+  case -2:
+      maxval = ErrorFunctionSigmoid(fBoost);
+      break;
+  case -1:
       maxval = DoubleSquareRatioSigmoid(fBoost);
       break;
     case 1:
@@ -67,9 +102,12 @@ void __stdcall AudioBoost::GetAudio(void* buf, int64_t start, int64_t count, ISc
     for (int i=0; i< count; i++) {
       for(int j=0;j< channels;j++) {
         switch (iCurve) {
-          case -1:
-            val = DoubleSquareRatioSigmoid(samples[i*channels+j] * fBoost) * fLimit;
+          case -2:
+            val = ErrorFunctionSigmoid(samples[i*channels+j] * fBoost) * fLimit;
             break;
+          case -1:
+              val = DoubleSquareRatioSigmoid(samples[i * channels + j] * fBoost) * fLimit;
+              break;
           case 0:
             val = fabs(samples[i*channels+j]*fBoost);
             if (val > 1.0f) val = 1.0f;
@@ -118,6 +156,10 @@ SFLOAT AudioBoost::DoubleSquareRatioSigmoid(SFLOAT val) {
     return val/sqrt(sqrt(1.0f+val*val*val*val));
 }
 
+SFLOAT AudioBoost::ErrorFunctionSigmoid(SFLOAT val) {    
+    return fast_erf(val);
+}
+
 AVSValue __cdecl Create_AudioBoost(AVSValue args, void*, IScriptEnvironment* env) {
   PClip clip = args[0].AsClip();
 
@@ -136,7 +178,7 @@ AVSValue __cdecl Create_AudioBoost(AVSValue args, void*, IScriptEnvironment* env
     env->ThrowError("Limit factor is outside a sensible range [0.1 .. 1.0] (use e.g. Amplify or Normalize as post processing instead).");
 
   int iCurve = args[3].AsInt(1);
-  if((iCurve < -1) || (iCurve > 4))
+  if((iCurve < -2) || (iCurve > 4))
     env->ThrowError("Curve index most be in a range 0 .. 4 (default is 1).");
 
   return new AudioBoost(clip, fBoost, fLimit, iCurve, args[4].AsBool(true));
