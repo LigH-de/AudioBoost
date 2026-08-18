@@ -28,13 +28,13 @@ limiting factor the amplified and clipped samples are multiplied with before the
 * ***-1:** double square ratio sigmoid curve, harder clipping, experimental*
 * ***-2:** approx. error function sigmoid curve, harder clipping, experimental*
 
-![AudioBoost curves](https://www.ligh.de/pics/Sigmoids.png)
-
-![AudioBoost curves](https://www.ligh.de/pics/Sigmoids_norm.png)
+![AudioBoost curves](https://www.ligh.de/pics/Sigmoids.png?)
 
 **norm**<br>
 `bool {true}`<br>
 If enabled (by default it is), the curve gets scaled so that an input audio sample with maximum value will return with maximum value (before the limiting); this will cause a slightly higher amplification for the softer curves in lower volumes.
+
+![AudioBoost curves, normalized](https://www.ligh.de/pics/Sigmoids_norm.png)
 
 <hr>
 
