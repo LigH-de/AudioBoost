@@ -30,6 +30,8 @@ limiting factor the amplified and clipped samples are multiplied with before the
 
 ![AudioBoost curves](https://www.ligh.de/pics/Sigmoids.png)
 
+![AudioBoost curves](https://www.ligh.de/pics/Sigmoids_norm.png)
+
 **norm**<br>
 `bool {true}`<br>
 If enabled (by default it is), the curve gets scaled so that an input audio sample with maximum value will return with maximum value (before the limiting); this will cause a slightly higher amplification for the softer curves in lower volumes.
