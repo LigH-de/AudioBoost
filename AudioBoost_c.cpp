@@ -10,200 +10,209 @@ static constexpr float HalfPi{ 3.1415926535897932384626433832795028842f / 2.0f }
 
 struct AudioBoost
 {
-    float fBoost;
-    float fLimit;
-    float maxval;
+	float fBoost;
+	float fLimit;
+	float maxval;
 };
 
 inline static float fast_erf(float x) {
-    // scaling correction
-    x *= 0.886644;
-    // erf(-x) = -erf(x)
-    float sign = (x < 0.0) ? -1.0 : 1.0;
-    x = std::abs(x);
+	// scaling correction
+	x *= 0.886644;
+	// erf(-x) = -erf(x)
+	float sign = (x < 0.0) ? -1.0 : 1.0;
+	x = std::abs(x);
 
-    // Fast fail for large numbers where erf(x) asymptotically reaches 1.0
-    // exp(-x*x) underflows to 0 near x = 6.0 anyway
-    if (x >= 6.0) {
-        return sign;
-    }
+	// Fast fail for large numbers where erf(x) asymptotically reaches 1.0
+	// exp(-x*x) underflows to 0 near x = 6.0 anyway
+	if (x >= 6.0) {
+		return sign;
+	}
 
-    // Constants for the approximation
-    const float p = 0.3275911;
-    const float a1 = 0.254829592;
-    const float a2 = -0.284496736;
-    const float a3 = 1.421413741;
-    const float a4 = -1.453152027;
-    const float a5 = 1.061405429;
+	// Constants for the approximation
+	const float p = 0.3275911;
+	const float a1 = 0.254829592;
+	const float a2 = -0.284496736;
+	const float a3 = 1.421413741;
+	const float a4 = -1.453152027;
+	const float a5 = 1.061405429;
 
-    float t = 1.0 / (1.0 + p * x);
+	float t = 1.0 / (1.0 + p * x);
 
-    // Evaluate polynomial using Horner's method: a1*t + a2*t^2 + ...
-    float poly = t * (a1 + t * (a2 + t * (a3 + t * (a4 + t * a5))));
+	// Evaluate polynomial using Horner's method: a1*t + a2*t^2 + ...
+	float poly = t * (a1 + t * (a2 + t * (a3 + t * (a4 + t * a5))));
 
-    // Calculate final value
-    return sign * (1.0 - poly * std::exp(-x * x));
+	// Calculate final value
+	return sign * (1.0 - poly * std::exp(-x * x));
 }
 
 template <int iCurve, bool bNormalize>
 static int AVSC_CC avs_get_audio_AudioBoost(AVS_FilterInfo* fi, void* buf, int64_t start, int64_t count)
 {
-    AudioBoost* d{ reinterpret_cast<AudioBoost*>(fi->user_data) };
+	AudioBoost* d{ reinterpret_cast<AudioBoost*>(fi->user_data) };
 
-    if (avs_get_audio(fi->child, buf, start, count))
-        return 0;
+	if (avs_get_audio(fi->child, buf, start, count))
+		return 0;
 
-    const int channels{ fi->vi.nchannels };
-    const float fBoost{ d->fBoost };
-    const float fLimit{ d->fLimit };
-    const float maxval{ d->maxval };
+	const int channels{ fi->vi.nchannels };
+	const float fBoost{ d->fBoost };
+	const float fLimit{ d->fLimit };
+	const float maxval{ d->maxval };
 
-    float* samples{ reinterpret_cast<float*>(buf) };
+	float* samples{ reinterpret_cast<float*>(buf) };
 
-    for (int i{ 0 }; i < count; ++i)
-    {
-        for (int j{ 0 }; j < channels; ++j)
-        {
-            float val{ [&]()
-            {
-                const float sampleval{ samples[i * channels + j] };
-                const float boostedval{ sampleval * fBoost };
-                const float clampedval{ std::min(std::fabsf(boostedval), 1.0f) };
-                switch (iCurve) {
-                    case 0: // hard limit
-                        return (sampleval < 0.0f) ? -clampedval : clampedval;
-                        break;
-                    case 1: // hyperbolic tangens
-                        return std::tanhf(boostedval) * fLimit;
-                        break;
-                    case 2: // square ratio sigmoid
-                        return boostedval / std::sqrtf(1.0f + boostedval * boostedval) * fLimit;
-                        break;
-                    case 3: // scaled arcus tangens
-                        return std::atanf(boostedval * HalfPi) / HalfPi * fLimit;
-                        break;
-                    case 4: // absolute ratio sigmoid
-                        return boostedval / (1.0f + std::fabsf(boostedval)) * fLimit;
-                        break;
-                    case -1: // double square ratio sigmoid
-                        return boostedval / std::sqrtf(std::sqrtf(1.0f + boostedval * boostedval * boostedval * boostedval)) * fLimit;
-                        break;
-                    case -2: // approximated error function
-                        return fast_erf(boostedval) * fLimit;
-                        break;
-                    default: // passthrough fallback
-                        return sampleval;
-                }
-            }() };
+	for (int i{ 0 }; i < count; ++i)
+	{
+		for (int j{ 0 }; j < channels; ++j)
+		{
+			float val{ [&]()
+			{
+				const float sampleval{ samples[i * channels + j] };
+				const float boostedval{ sampleval * fBoost };
+				const float clampedval{ std::min(std::fabsf(boostedval), 1.0f) };
+				float tval{ boostedval };
+				switch (iCurve) {
+					case 0: // hard limit
+						return (sampleval < 0.0f) ? -clampedval : clampedval;
+						break;
+					case 1: // hyperbolic tangens
+						return std::tanhf(boostedval) * fLimit;
+						break;
+					case 2: // square ratio sigmoid
+						return boostedval / std::sqrtf(1.0f + boostedval * boostedval) * fLimit;
+						break;
+					case 3: // scaled arcus tangens
+						return std::atanf(boostedval * HalfPi) / HalfPi * fLimit;
+						break;
+					case 4: // absolute ratio sigmoid
+						return boostedval / (1.0f + std::fabsf(boostedval)) * fLimit;
+						break;
+					case -1: // double square ratio sigmoid
+						return boostedval / std::sqrtf(std::sqrtf(1.0f + boostedval * boostedval * boostedval * boostedval)) * fLimit;
+						break;
+					case -2: // approximated error function
+						return fast_erf(boostedval) * fLimit;
+						break;
+					case -3: // triple square ratio sigmoid
+						tval *= tval; // boostedval^2
+						tval *= tval; // boostedval^4
+						tval *= tval; // boostedval^8
+						return boostedval / std::sqrtf(std::sqrtf(std::sqrtf(1.0f + tval))) * fLimit;
+						break;
+					default: // passthrough fallback
+						return sampleval;
+				}
+			}() };
 
-            if (bNormalize)
-                val /= maxval;
+			if (bNormalize)
+				val /= maxval;
 
-            samples[i * channels + j] = val * fLimit;
-        }
-    }
+			samples[i * channels + j] = val * fLimit;
+		}
+	}
 
-    return 0;
+	return 0;
 }
 
 static void AVSC_CC free_AudioBoost(AVS_FilterInfo* fi)
 {
-    AudioBoost* d{ static_cast<AudioBoost*>(fi->user_data) };
+	AudioBoost* d{ static_cast<AudioBoost*>(fi->user_data) };
 
-    delete d;
+	delete d;
 }
 
 static int AVSC_CC set_cache_hints_AudioBoost(AVS_FilterInfo* fi, int cachehints, int frame_range)
 {
-    return cachehints == AVS_CACHE_GET_MTMODE ? 1 : 0;
+	return cachehints == AVS_CACHE_GET_MTMODE ? 1 : 0;
 }
 
 static AVS_Value AVSC_CC Create_AudioBoost(AVS_ScriptEnvironment* env, AVS_Value args, void* param)
 {
-    enum
-    {
-        Clip,
-        Boost,
-        Limit,
-        Curve,
-        Norm
-    };
+	enum
+	{
+		Clip,
+		Boost,
+		Limit,
+		Curve,
+		Norm
+	};
 
-    AudioBoost* d{ new AudioBoost() };
+	AudioBoost* d{ new AudioBoost() };
 
-    AVS_FilterInfo* fi;
-    AVS_Clip* clip{ avs_new_c_filter(env, &fi, avs_array_elt(args, Clip), 1) };
+	AVS_FilterInfo* fi;
+	AVS_Clip* clip{ avs_new_c_filter(env, &fi, avs_array_elt(args, Clip), 1) };
 
-    const auto set_error{ [&](const char* msg)
-    {
-        avs_release_clip(clip);
+	const auto set_error{ [&](const char* msg)
+	{
+		avs_release_clip(clip);
 
-        return avs_new_value_error(msg);
-    } };
+		return avs_new_value_error(msg);
+	} };
 
-    // Make sure AviSynth.lib version used for building is >= r3928 (the minimum version required to run the plugin).
-    if (avs_check_version(env, 10))
-        return set_error("AudioBoost: AviSynth+ version must be r3928 or later.");
-    if (!avs_has_audio(&fi->vi))
-        return set_error("AudioBoost: input clip does not have audio.");
-    if (avs_sample_type(&fi->vi) != AVS_SAMPLE_FLOAT)
-        return set_error("AudioBoost: input audio sample format must be float.");
+	// Make sure AviSynth.lib version used for building is >= r3928 (the minimum version required to run the plugin).
+	if (avs_check_version(env, 10))
+		return set_error("AudioBoost: AviSynth+ version must be r3928 or later.");
+	if (!avs_has_audio(&fi->vi))
+		return set_error("AudioBoost: input clip does not have audio.");
+	if (avs_sample_type(&fi->vi) != AVS_SAMPLE_FLOAT)
+		return set_error("AudioBoost: input audio sample format must be float.");
 
-    const float fBoost{ avs_defined(avs_array_elt(args, Boost)) ?
-        static_cast<float>(avs_as_float(avs_array_elt(args, Boost))) : 4.0f };
-    if ((fBoost < 0.5f) || (fBoost > 20.0f))
-        return set_error("AudioBoost: boost factor is outside a sensible range [0.5 .. 20.0] (default is 4.0).");
+	const float fBoost{ avs_defined(avs_array_elt(args, Boost)) ?
+		static_cast<float>(avs_as_float(avs_array_elt(args, Boost))) : 4.0f };
+	if ((fBoost < 0.5f) || (fBoost > 20.0f))
+		return set_error("AudioBoost: boost factor is outside a sensible range [0.5 .. 20.0] (default is 4.0).");
 
-    const float fLimit{ avs_defined(avs_array_elt(args, Limit)) ?
-        static_cast<float>(avs_as_float(avs_array_elt(args, Limit))) : 0.95f };
-    if ((fLimit < 0.1f) || (fLimit > 1.0f))
-        return set_error("AudioBoost: limit factor is outside a sensible range [0.1 .. 1.0] (use e.g. Amplify or Normalize as post processing instead).");
+	const float fLimit{ avs_defined(avs_array_elt(args, Limit)) ?
+		static_cast<float>(avs_as_float(avs_array_elt(args, Limit))) : 0.95f };
+	if ((fLimit < 0.1f) || (fLimit > 1.0f))
+		return set_error("AudioBoost: limit factor is outside a sensible range [0.1 .. 1.0] (use e.g. Amplify or Normalize as post processing instead).");
 
-    d->fBoost = fBoost;
-    d->fLimit = fLimit;
+	d->fBoost = fBoost;
+	d->fLimit = fLimit;
 
-    const int iCurve{ avs_defined(avs_array_elt(args, Curve)) ? avs_as_int(avs_array_elt(args, Curve)) : 1 };
-    if ((iCurve < -2) || (iCurve > 4))
-        return set_error("AudioBoost: curve index most be in a range 0 .. 4 (default is 1).");
+	const int iCurve{ avs_defined(avs_array_elt(args, Curve)) ? avs_as_int(avs_array_elt(args, Curve)) : 1 };
+	if ((iCurve < -3) || (iCurve > 4))
+		return set_error("AudioBoost: curve index must be in a range 0 .. 4 (default is 1).");
 
-    const bool bNormalize = avs_defined(avs_array_elt(args, Norm)) ? !!avs_as_bool(avs_array_elt(args, Norm)) : true;
+	const bool bNormalize = avs_defined(avs_array_elt(args, Norm)) ? !!avs_as_bool(avs_array_elt(args, Norm)) : true;
 
-    switch (iCurve)
-    {
-        case 1: d->maxval = std::tanh(fBoost); break;
-        case 2: d->maxval = fBoost / sqrtf(1.0f + fBoost * fBoost); break;
-        case 3: d->maxval = std::atan(fBoost * HalfPi) / HalfPi; break;
-        case 4: d->maxval = 1.0f / (1.0f + fabs(fBoost)); break;
-        case -1: d->maxval = fBoost / sqrtf(sqrtf(1.0f + fBoost * fBoost * fBoost * fBoost)); break;
-        case -2: d->maxval = fast_erf(fBoost); break;
-        default: d->maxval = 1.0f;
-    }
+	switch (iCurve)
+	{
+		case 1: d->maxval = std::tanh(fBoost); break;
+		case 2: d->maxval = fBoost / sqrtf(1.0f + fBoost * fBoost); break;
+		case 3: d->maxval = std::atan(fBoost * HalfPi) / HalfPi; break;
+		case 4: d->maxval = 1.0f / (1.0f + fabs(fBoost)); break;
+		case -1: d->maxval = fBoost / sqrtf(sqrtf(1.0f + fBoost * fBoost * fBoost * fBoost)); break;
+		case -2: d->maxval = fast_erf(fBoost); break;
+		case -3: d->maxval = fBoost / sqrtf(sqrtf(sqrtf(1.0f + powf(fBoost, 8.0f)))); break;
+		default: d->maxval = 1.0f;
+	}
 
-    AVS_Value v{ avs_new_value_clip(clip) };
+	AVS_Value v{ avs_new_value_clip(clip) };
 
-    fi->user_data = reinterpret_cast<void*>(d);
-    fi->set_cache_hints = set_cache_hints_AudioBoost;
-    fi->free_filter = free_AudioBoost;
+	fi->user_data = reinterpret_cast<void*>(d);
+	fi->set_cache_hints = set_cache_hints_AudioBoost;
+	fi->free_filter = free_AudioBoost;
 
-    switch (iCurve)
-    {
-        case -2: fi->get_audio = (bNormalize) ? avs_get_audio_AudioBoost<-2, true> : avs_get_audio_AudioBoost<-2, false>; break;
-        case -1: fi->get_audio = (bNormalize) ? avs_get_audio_AudioBoost<-1, true> : avs_get_audio_AudioBoost<-1, false>; break;
-        case 1: fi->get_audio = (bNormalize) ? avs_get_audio_AudioBoost<1, true> : avs_get_audio_AudioBoost<1, false>; break;
-        case 2: fi->get_audio = (bNormalize) ? avs_get_audio_AudioBoost<2, true> : avs_get_audio_AudioBoost<2, false>; break;
-        case 3: fi->get_audio = (bNormalize) ? avs_get_audio_AudioBoost<3, true> : avs_get_audio_AudioBoost<3, false>; break;
-        case 4: fi->get_audio = (bNormalize) ? avs_get_audio_AudioBoost<4, true> : avs_get_audio_AudioBoost<4, false>; break;
-        default: fi->get_audio = (bNormalize) ? avs_get_audio_AudioBoost<0, true> : avs_get_audio_AudioBoost<0, false>;
-    }
+	switch (iCurve)
+	{
+		case -3: fi->get_audio = (bNormalize) ? avs_get_audio_AudioBoost<-3, true> : avs_get_audio_AudioBoost<-3, false>; break;
+		case -2: fi->get_audio = (bNormalize) ? avs_get_audio_AudioBoost<-2, true> : avs_get_audio_AudioBoost<-2, false>; break;
+		case -1: fi->get_audio = (bNormalize) ? avs_get_audio_AudioBoost<-1, true> : avs_get_audio_AudioBoost<-1, false>; break;
+		case 1: fi->get_audio = (bNormalize) ? avs_get_audio_AudioBoost<1, true> : avs_get_audio_AudioBoost<1, false>; break;
+		case 2: fi->get_audio = (bNormalize) ? avs_get_audio_AudioBoost<2, true> : avs_get_audio_AudioBoost<2, false>; break;
+		case 3: fi->get_audio = (bNormalize) ? avs_get_audio_AudioBoost<3, true> : avs_get_audio_AudioBoost<3, false>; break;
+		case 4: fi->get_audio = (bNormalize) ? avs_get_audio_AudioBoost<4, true> : avs_get_audio_AudioBoost<4, false>; break;
+		default: fi->get_audio = (bNormalize) ? avs_get_audio_AudioBoost<0, true> : avs_get_audio_AudioBoost<0, false>;
+	}
 
-    avs_release_clip(clip);
+	avs_release_clip(clip);
 
-    return v;
+	return v;
 }
 
 const char* AVSC_CC avisynth_c_plugin_init(AVS_ScriptEnvironment* env)
 {
-    avs_add_function(env, "AudioBoost", "c[boost]f[limit]f[curve]i[norm]b", Create_AudioBoost, 0);
+	avs_add_function(env, "AudioBoost", "c[boost]f[limit]f[curve]i[norm]b", Create_AudioBoost, 0);
 
-    return "AudioBoost dynamic compressor";
+	return "AudioBoost dynamic compressor";
 }
