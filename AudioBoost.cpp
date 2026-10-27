@@ -1,6 +1,5 @@
-// AudioBoost plugin for AviSynth (c) 2024-2026, Mario *LigH* Rohkrämer
-// equivalent to algorithms provided by me to be used in
-// BeSweet (c) DSPguru and HeadAC3he (c) DarkAvenger
+// AudioBoost: Soft clipping amplifier plugin for AviSynth v2.6+ (c) 2024-2026, Mario *LigH* Rohkrämer
+// equivalent to algorithms provided by me to be used in BeSweet (c) DSPguru and HeadAC3he (c) DarkAvenger
 
 #ifdef AVS_WINDOWS
 #include <windows.h>
@@ -17,57 +16,26 @@
 
 #define HalfPi M_PI/2.0f
 
-inline static double fast_erf(double x) {
-	// scaling correction
-	x *= 0.886644;
-	// erf(-x) = -erf(x)
-	double sign = (x < 0.0) ? -1.0 : 1.0;
-	x = std::abs(x);
-
-	// Fast fail for large numbers where erf(x) asymptotically reaches 1.0
-	// exp(-x*x) underflows to 0 near x = 6.0 anyway
-	if (x >= 6.0) {
-		return sign;
-	}
-
-	// Constants for the approximation
-	const double p = 0.3275911;
-	const double a1 = 0.254829592;
-	const double a2 = -0.284496736;
-	const double a3 = 1.421413741;
-	const double a4 = -1.453152027;
-	const double a5 = 1.061405429;
-
-	double t = 1.0 / (1.0 + p * x);
-
-	// Evaluate polynomial using Horner's method: a1*t + a2*t^2 + ...
-	double poly = t * (a1 + t * (a2 + t * (a3 + t * (a4 + t * a5))));
-
-	// Calculate final value
-	return sign * (1.0 - poly * std::exp(-x * x));
-}
-
 class AudioBoost : public GenericVideoFilter {
 public:
-	AudioBoost(PClip _child, float _fBoost, float _fLimit, int _iCurve, bool _bNormalize);
+	AudioBoost(PClip _child, float _fBoost, float _fLimit, int _iSoftness, bool _bNormalize);
 	void __stdcall GetAudio(void* buf, int64_t start, int64_t count, IScriptEnvironment* env);
 private:
 	float fBoost, fLimit;
-	int iCurve;
+	int iSoftness;
 	bool bNormalize;
 	SFLOAT TanH(SFLOAT val);
 	SFLOAT ScaledArcTan(SFLOAT val);
 	SFLOAT LinearRatioSigmoid(SFLOAT val);
 	SFLOAT SquareRatioSigmoid(SFLOAT val);
 	SFLOAT DoubleSquareRatioSigmoid(SFLOAT val);
-	SFLOAT ErrorFunctionSigmoid(SFLOAT val);
 	SFLOAT TripleSquareRatioSigmoid(SFLOAT val);
 };
 
-AudioBoost::AudioBoost(PClip _child, float _fBoost, float _fLimit, int _iCurve, bool _bNormalize) : GenericVideoFilter(_child) {
+AudioBoost::AudioBoost(PClip _child, float _fBoost, float _fLimit, int _iSoftness, bool _bNormalize) : GenericVideoFilter(_child) {
 	fBoost = _fBoost;
 	fLimit = _fLimit;
-	iCurve = _iCurve;
+	iSoftness = _iSoftness;
 	bNormalize = _bNormalize;
 }
 
@@ -76,26 +44,23 @@ void __stdcall AudioBoost::GetAudio(void* buf, int64_t start, int64_t count, ISc
 	int channels = vi.AudioChannels();
 	SFLOAT val, maxval;
 
-	switch (iCurve) {
-	case -3:
+	switch (iSoftness) {
+	case 1:
 		maxval = TripleSquareRatioSigmoid(fBoost);
 		break;
-	case -2:
-		maxval = ErrorFunctionSigmoid(fBoost);
-		break;
-	case -1:
+	case 2:
 		maxval = DoubleSquareRatioSigmoid(fBoost);
 		break;
-	case 1:
+	case 3:
 		maxval = TanH(fBoost);
 		break;
-	case 2:
+	case 4:
 		maxval = SquareRatioSigmoid(fBoost);
 		break;
-	case 3:
+	case 5:
 		maxval = ScaledArcTan(fBoost);
 		break;
-	case 4:
+	case 6:
 		maxval = LinearRatioSigmoid(fBoost);
 		break;
 	default:
@@ -105,31 +70,28 @@ void __stdcall AudioBoost::GetAudio(void* buf, int64_t start, int64_t count, ISc
 		SFLOAT* samples = (SFLOAT*)buf;
 		for (int i = 0; i < count; i++) {
 			for (int j = 0; j < channels; j++) {
-				switch (iCurve) {
-				case -3:
-					val = TripleSquareRatioSigmoid(samples[i * channels + j] * fBoost) * fLimit;
-					break;
-				case -2:
-					val = ErrorFunctionSigmoid(samples[i * channels + j] * fBoost) * fLimit;
-					break;
-				case -1:
-					val = DoubleSquareRatioSigmoid(samples[i * channels + j] * fBoost) * fLimit;
-					break;
+				switch (iSoftness) {
 				case 0:
 					val = fabs(samples[i * channels + j] * fBoost);
 					if (val > 1.0f) val = 1.0f;
 					if (samples[i * channels + j] < 0.0f) val = -val;
 					break;
 				case 1:
-					val = TanH(samples[i * channels + j] * fBoost) * fLimit;
+					val = TripleSquareRatioSigmoid(samples[i * channels + j] * fBoost) * fLimit;
 					break;
 				case 2:
-					val = SquareRatioSigmoid(samples[i * channels + j] * fBoost) * fLimit;
+					val = DoubleSquareRatioSigmoid(samples[i * channels + j] * fBoost) * fLimit;
 					break;
 				case 3:
-					val = ScaledArcTan(samples[i * channels + j] * fBoost) * fLimit;
+					val = TanH(samples[i * channels + j] * fBoost) * fLimit;
 					break;
 				case 4:
+					val = SquareRatioSigmoid(samples[i * channels + j] * fBoost) * fLimit;
+					break;
+				case 5:
+					val = ScaledArcTan(samples[i * channels + j] * fBoost) * fLimit;
+					break;
+				case 6:
 					val = LinearRatioSigmoid(samples[i * channels + j] * fBoost) * fLimit;
 					break;
 				default:
@@ -163,10 +125,6 @@ SFLOAT AudioBoost::DoubleSquareRatioSigmoid(SFLOAT val) {
 	return val / sqrt(sqrt(1.0f + val * val * val * val));
 }
 
-SFLOAT AudioBoost::ErrorFunctionSigmoid(SFLOAT val) {
-	return fast_erf(val);
-}
-
 SFLOAT AudioBoost::TripleSquareRatioSigmoid(SFLOAT val) {
 	SFLOAT tval = val;
 	tval *= tval; // val^2
@@ -192,17 +150,17 @@ AVSValue __cdecl Create_AudioBoost(AVSValue args, void*, IScriptEnvironment* env
 	if ((fLimit < 0.1f) || (fLimit > 1.0f))
 		env->ThrowError("Limit factor is outside a sensible range [0.1 .. 1.0] (use e.g. Amplify or Normalize as post processing instead).");
 
-	int iCurve = args[3].AsInt(1);
-	if ((iCurve < -3) || (iCurve > 4))
-		env->ThrowError("Curve index must be in a range 0 .. 4 (default is 1).");
+	int iSoftness = args[3].AsInt(1);
+	if ((iSoftness < 0) || (iSoftness > 6))
+		env->ThrowError("Softness index must be in a range 0 .. 6 (default is 1).");
 
-	return new AudioBoost(clip, fBoost, fLimit, iCurve, args[4].AsBool(true));
+	return new AudioBoost(clip, fBoost, fLimit, iSoftness, args[4].AsBool(true));
 }
 
 const AVS_Linkage* AVS_linkage = 0;
 
 extern "C" __declspec(dllexport) const char* __stdcall AvisynthPluginInit3(IScriptEnvironment* env, const AVS_Linkage* const vectors) {
 	AVS_linkage = vectors;
-	env->AddFunction("AudioBoost", "c[boost]f[limit]f[curve]i[norm]b", Create_AudioBoost, 0);
-	return "AudioBoost dynamic compressor";
+	env->AddFunction("AudioBoost", "c[boost]f[limit]f[softness]i[norm]b", Create_AudioBoost, 0);
+	return "AudioBoost soft clipping amplifier";
 }
