@@ -1,4 +1,4 @@
-# AudioBoost: Soft clipping amplifier plugin for AviSynth
+# AudioBoost: Soft clipping amplifier plugin for Avisynth v2.5+ and VapourSynth v4
 ### (c) 2024-2026, Mario \*LigH\* Rohkrämer, contributions from Asd-g and qyot27
 
 ## Purpose
@@ -18,25 +18,24 @@ amplification factor the input samples are multiplied with before the clipping c
 `float [0.1 {0.95} 1.0]`<br>
 limiting factor the amplified and clipped samples are multiplied with before the result is returned
 
-**curve**<br>
+**softness**<br>
 `int [0 {1} 4]`<br>
-* **0:** linear amplification, totally hard clipping
-* **1:** hyperbolic tangent curve, soft clipping
-* **2:** square ratio sigmoid curve, softer clipping
-* **3:** scaled arcus tangent curve, very soft clipping
-* **4:** absolute ratio sigmoid curve, softest clipping
-* ***-1:** double square ratio sigmoid curve, harder clipping, experimental*
-* ***-2:** approx. error function sigmoid curve, even harder clipping, experimental*
-* ***-3:** triple square ratio sigmoid curve, much harder clipping, experimental*
+* **0:** linear amplification, really hard clipping
+* **1:** triple square ratio sigmoid curve, almost hard clipping
+* **2:** double square ratio sigmoid curve, not so hard clipping
+* **3:** hyperbolic tangent curve, soft clipping
+* **4:** square ratio sigmoid curve, softer clipping
+* **5:** scaled arcus tangent curve, very soft clipping
+* **6:** absolute ratio sigmoid curve, softest clipping
 
-![AudioBoost curves](https://www.ligh.de/pics/Sigmoids032.png)
+![AudioBoost curves](https://www.ligh.de/pics/Sigmoids04.png)
 
 **norm**<br>
 `bool {true}`<br>
 If enabled (by default it is), the curve gets scaled so that an input audio sample with maximum value will return with maximum value (before the limiting); this will cause a slightly higher amplification for the softer curves in lower volumes.
 
-![AudioBoost curves, normalized](https://www.ligh.de/pics/Sigmoids032norm.png)
+![AudioBoost curves, normalized](https://www.ligh.de/pics/Sigmoids04norm.png)
 
 <hr>
 
-*Note: C++ interface version requires the same compiler family as the one avisynth.dll was built with; C interface version is more cross-compiler compatible.*
+*Note: C++ interface version requires the same compiler family as the one avisynth.dll was built with; C interface version is more cross-compiler compatible. Dual interface version provides both Avisynth-C v2.5+ and VapourSynth v4 interfaces.*
