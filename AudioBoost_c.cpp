@@ -1,6 +1,5 @@
-// AudioBoost plugin for AviSynth (c) 2024-2026, Mario *LigH* Rohkrämer
-// equivalent to algorithms provided by me to be used in
-// BeSweet (c) DSPguru and HeadAC3he (c) DarkAvenger
+// AudioBoost: Soft clipping amplifier plugin for AviSynth v2.5+ (c) 2024-2026, Mario *LigH* Rohkrämer
+// equivalent to algorithms provided by me to be used in BeSweet (c) DSPguru and HeadAC3he (c) DarkAvenger
 
 #include <algorithm>
 #include <cmath>
@@ -15,37 +14,7 @@ struct AudioBoost
 	float maxval;
 };
 
-inline static float fast_erf(float x) {
-	// scaling correction
-	x *= 0.886644;
-	// erf(-x) = -erf(x)
-	float sign = (x < 0.0) ? -1.0 : 1.0;
-	x = std::abs(x);
-
-	// Fast fail for large numbers where erf(x) asymptotically reaches 1.0
-	// exp(-x*x) underflows to 0 near x = 6.0 anyway
-	if (x >= 6.0) {
-		return sign;
-	}
-
-	// Constants for the approximation
-	const float p = 0.3275911;
-	const float a1 = 0.254829592;
-	const float a2 = -0.284496736;
-	const float a3 = 1.421413741;
-	const float a4 = -1.453152027;
-	const float a5 = 1.061405429;
-
-	float t = 1.0 / (1.0 + p * x);
-
-	// Evaluate polynomial using Horner's method: a1*t + a2*t^2 + ...
-	float poly = t * (a1 + t * (a2 + t * (a3 + t * (a4 + t * a5))));
-
-	// Calculate final value
-	return sign * (1.0 - poly * std::exp(-x * x));
-}
-
-template <int iCurve, bool bNormalize>
+template <int iSoftness, bool bNormalize>
 static int AVSC_CC avs_get_audio_AudioBoost(AVS_FilterInfo* fi, void* buf, int64_t start, int64_t count)
 {
 	AudioBoost* d{ reinterpret_cast<AudioBoost*>(fi->user_data) };
@@ -70,33 +39,32 @@ static int AVSC_CC avs_get_audio_AudioBoost(AVS_FilterInfo* fi, void* buf, int64
 				const float boostedval{ sampleval * fBoost };
 				const float clampedval{ std::min(std::fabsf(boostedval), 1.0f) };
 				float tval{ boostedval };
-				switch (iCurve) {
+				switch (iSoftness) {
 					case 0: // hard limit
 						return (sampleval < 0.0f) ? -clampedval : clampedval;
 						break;
-					case 1: // hyperbolic tangens
-						return std::tanhf(boostedval) * fLimit;
-						break;
-					case 2: // square ratio sigmoid
-						return boostedval / std::sqrtf(1.0f + boostedval * boostedval) * fLimit;
-						break;
-					case 3: // scaled arcus tangens
-						return std::atanf(boostedval * HalfPi) / HalfPi * fLimit;
-						break;
-					case 4: // absolute ratio sigmoid
-						return boostedval / (1.0f + std::fabsf(boostedval)) * fLimit;
-						break;
-					case -1: // double square ratio sigmoid
-						return boostedval / std::sqrtf(std::sqrtf(1.0f + boostedval * boostedval * boostedval * boostedval)) * fLimit;
-						break;
-					case -2: // approximated error function
-						return fast_erf(boostedval) * fLimit;
-						break;
-					case -3: // triple square ratio sigmoid
+					case 1: // triple square ratio sigmoid
 						tval *= tval; // boostedval^2
 						tval *= tval; // boostedval^4
 						tval *= tval; // boostedval^8
 						return boostedval / std::sqrtf(std::sqrtf(std::sqrtf(1.0f + tval))) * fLimit;
+						break;
+					case 2: // double square ratio sigmoid
+						tval *= tval; // boostedval^2
+						tval *= tval; // boostedval^4
+						return boostedval / std::sqrtf(std::sqrtf(1.0f + tval)) * fLimit;
+						break;
+					case 3: // hyperbolic tangens
+						return std::tanhf(boostedval) * fLimit;
+						break;
+					case 4: // square ratio sigmoid
+						return boostedval / std::sqrtf(1.0f + boostedval * boostedval) * fLimit;
+						break;
+					case 5: // scaled arcus tangens
+						return std::atanf(boostedval * HalfPi) / HalfPi * fLimit;
+						break;
+					case 6: // absolute ratio sigmoid
+						return boostedval / (1.0f + std::fabsf(boostedval)) * fLimit;
 						break;
 					default: // passthrough fallback
 						return sampleval;
@@ -132,7 +100,7 @@ static AVS_Value AVSC_CC Create_AudioBoost(AVS_ScriptEnvironment* env, AVS_Value
 		Clip,
 		Boost,
 		Limit,
-		Curve,
+		Softness,
 		Norm
 	};
 
@@ -169,21 +137,20 @@ static AVS_Value AVSC_CC Create_AudioBoost(AVS_ScriptEnvironment* env, AVS_Value
 	d->fBoost = fBoost;
 	d->fLimit = fLimit;
 
-	const int iCurve{ avs_defined(avs_array_elt(args, Curve)) ? avs_as_int(avs_array_elt(args, Curve)) : 1 };
-	if ((iCurve < -3) || (iCurve > 4))
-		return set_error("AudioBoost: curve index must be in a range 0 .. 4 (default is 1).");
+	const int iSoftness{ avs_defined(avs_array_elt(args, Softness)) ? avs_as_int(avs_array_elt(args, Softness)) : 1 };
+	if ((iSoftness < 0) || (iSoftness > 6))
+		return set_error("AudioBoost: softness index must be in a range 0 .. 6 (default is 1).");
 
 	const bool bNormalize = avs_defined(avs_array_elt(args, Norm)) ? !!avs_as_bool(avs_array_elt(args, Norm)) : true;
 
-	switch (iCurve)
+	switch (iSoftness)
 	{
-		case 1: d->maxval = std::tanh(fBoost); break;
-		case 2: d->maxval = fBoost / sqrtf(1.0f + fBoost * fBoost); break;
-		case 3: d->maxval = std::atan(fBoost * HalfPi) / HalfPi; break;
-		case 4: d->maxval = 1.0f / (1.0f + fabs(fBoost)); break;
-		case -1: d->maxval = fBoost / sqrtf(sqrtf(1.0f + fBoost * fBoost * fBoost * fBoost)); break;
-		case -2: d->maxval = fast_erf(fBoost); break;
-		case -3: d->maxval = fBoost / sqrtf(sqrtf(sqrtf(1.0f + powf(fBoost, 8.0f)))); break;
+		case 1: d->maxval = fBoost / sqrtf(sqrtf(sqrtf(1.0f + powf(fBoost, 8.0f)))); break;
+		case 2: d->maxval = fBoost / sqrtf(sqrtf(1.0f + fBoost * fBoost * fBoost * fBoost)); break;
+		case 3: d->maxval = std::tanh(fBoost); break;
+		case 4: d->maxval = fBoost / sqrtf(1.0f + fBoost * fBoost); break;
+		case 5: d->maxval = std::atan(fBoost * HalfPi) / HalfPi; break;
+		case 6: d->maxval = 1.0f / (1.0f + fabs(fBoost)); break;
 		default: d->maxval = 1.0f;
 	}
 
@@ -193,15 +160,14 @@ static AVS_Value AVSC_CC Create_AudioBoost(AVS_ScriptEnvironment* env, AVS_Value
 	fi->set_cache_hints = set_cache_hints_AudioBoost;
 	fi->free_filter = free_AudioBoost;
 
-	switch (iCurve)
+	switch (iSoftness)
 	{
-		case -3: fi->get_audio = (bNormalize) ? avs_get_audio_AudioBoost<-3, true> : avs_get_audio_AudioBoost<-3, false>; break;
-		case -2: fi->get_audio = (bNormalize) ? avs_get_audio_AudioBoost<-2, true> : avs_get_audio_AudioBoost<-2, false>; break;
-		case -1: fi->get_audio = (bNormalize) ? avs_get_audio_AudioBoost<-1, true> : avs_get_audio_AudioBoost<-1, false>; break;
 		case 1: fi->get_audio = (bNormalize) ? avs_get_audio_AudioBoost<1, true> : avs_get_audio_AudioBoost<1, false>; break;
 		case 2: fi->get_audio = (bNormalize) ? avs_get_audio_AudioBoost<2, true> : avs_get_audio_AudioBoost<2, false>; break;
 		case 3: fi->get_audio = (bNormalize) ? avs_get_audio_AudioBoost<3, true> : avs_get_audio_AudioBoost<3, false>; break;
 		case 4: fi->get_audio = (bNormalize) ? avs_get_audio_AudioBoost<4, true> : avs_get_audio_AudioBoost<4, false>; break;
+		case 5: fi->get_audio = (bNormalize) ? avs_get_audio_AudioBoost<5, true> : avs_get_audio_AudioBoost<5, false>; break;
+		case 6: fi->get_audio = (bNormalize) ? avs_get_audio_AudioBoost<6, true> : avs_get_audio_AudioBoost<6, false>; break;
 		default: fi->get_audio = (bNormalize) ? avs_get_audio_AudioBoost<0, true> : avs_get_audio_AudioBoost<0, false>;
 	}
 
@@ -212,7 +178,7 @@ static AVS_Value AVSC_CC Create_AudioBoost(AVS_ScriptEnvironment* env, AVS_Value
 
 const char* AVSC_CC avisynth_c_plugin_init(AVS_ScriptEnvironment* env)
 {
-	avs_add_function(env, "AudioBoost", "c[boost]f[limit]f[curve]i[norm]b", Create_AudioBoost, 0);
+	avs_add_function(env, "AudioBoost", "c[boost]f[limit]f[softness]i[norm]b", Create_AudioBoost, 0);
 
-	return "AudioBoost dynamic compressor";
+	return "AudioBoost soft clipping amplifier";
 }
