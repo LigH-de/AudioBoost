@@ -19,7 +19,7 @@ amplification factor the input samples are multiplied with before the clipping c
 limiting factor the amplified and clipped samples are multiplied with before the result is returned
 
 **softness**<br>
-`int [0 {1} 4]`<br>
+`int [0 {1} 6]`<br>
 * **0:** linear amplification, really hard clipping
 * **1:** triple square ratio sigmoid curve, almost hard clipping
 * **2:** double square ratio sigmoid curve, not so hard clipping
