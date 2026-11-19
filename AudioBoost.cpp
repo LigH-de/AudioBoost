@@ -1,5 +1,6 @@
 // AudioBoost: Soft clipping amplifier plugin for AviSynth v2.6+ (c) 2024-2026, Mario *LigH* Rohkrämer
 // equivalent to algorithms provided by me to be used in BeSweet (c) DSPguru and HeadAC3he (c) DarkAvenger
+// some bug fixes by Myrsloik with the help of AI's by Google and Microsoft
 
 #ifdef AVS_WINDOWS
 #include <windows.h>
@@ -14,7 +15,7 @@
 #define M_PI 3.1415926535897932384626433832795028842
 #endif
 
-#define HalfPi M_PI/2.0f
+#define HalfPi (M_PI/2.0f)
 
 class AudioBoost : public GenericVideoFilter {
 public:
@@ -77,22 +78,22 @@ void __stdcall AudioBoost::GetAudio(void* buf, int64_t start, int64_t count, ISc
 					if (samples[i * channels + j] < 0.0f) val = -val;
 					break;
 				case 1:
-					val = TripleSquareRatioSigmoid(samples[i * channels + j] * fBoost) * fLimit;
+					val = TripleSquareRatioSigmoid(samples[i * channels + j] * fBoost);
 					break;
 				case 2:
-					val = DoubleSquareRatioSigmoid(samples[i * channels + j] * fBoost) * fLimit;
+					val = DoubleSquareRatioSigmoid(samples[i * channels + j] * fBoost);
 					break;
 				case 3:
-					val = TanH(samples[i * channels + j] * fBoost) * fLimit;
+					val = TanH(samples[i * channels + j] * fBoost);
 					break;
 				case 4:
-					val = SquareRatioSigmoid(samples[i * channels + j] * fBoost) * fLimit;
+					val = SquareRatioSigmoid(samples[i * channels + j] * fBoost);
 					break;
 				case 5:
-					val = ScaledArcTan(samples[i * channels + j] * fBoost) * fLimit;
+					val = ScaledArcTan(samples[i * channels + j] * fBoost);
 					break;
 				case 6:
-					val = LinearRatioSigmoid(samples[i * channels + j] * fBoost) * fLimit;
+					val = LinearRatioSigmoid(samples[i * channels + j] * fBoost);
 					break;
 				default:
 					val = samples[i * channels + j];
