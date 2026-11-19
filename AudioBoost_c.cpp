@@ -1,5 +1,6 @@
 // AudioBoost: Soft clipping amplifier plugin for AviSynth v2.5+ (c) 2024-2026, Mario *LigH* Rohkrämer
 // equivalent to algorithms provided by me to be used in BeSweet (c) DSPguru and HeadAC3he (c) DarkAvenger
+// some bug fixes by Myrsloik with the help of AI's by Google and Microsoft
 
 #include <algorithm>
 #include <cmath>
@@ -47,24 +48,24 @@ static int AVSC_CC avs_get_audio_AudioBoost(AVS_FilterInfo* fi, void* buf, int64
 						tval *= tval; // boostedval^2
 						tval *= tval; // boostedval^4
 						tval *= tval; // boostedval^8
-						return boostedval / std::sqrtf(std::sqrtf(std::sqrtf(1.0f + tval))) * fLimit;
+						return boostedval / std::sqrtf(std::sqrtf(std::sqrtf(1.0f + tval)));
 						break;
 					case 2: // double square ratio sigmoid
 						tval *= tval; // boostedval^2
 						tval *= tval; // boostedval^4
-						return boostedval / std::sqrtf(std::sqrtf(1.0f + tval)) * fLimit;
+						return boostedval / std::sqrtf(std::sqrtf(1.0f + tval));
 						break;
 					case 3: // hyperbolic tangens
-						return std::tanhf(boostedval) * fLimit;
+						return std::tanhf(boostedval);
 						break;
 					case 4: // square ratio sigmoid
-						return boostedval / std::sqrtf(1.0f + boostedval * boostedval) * fLimit;
+						return boostedval / std::sqrtf(1.0f + boostedval * boostedval);
 						break;
 					case 5: // scaled arcus tangens
-						return std::atanf(boostedval * HalfPi) / HalfPi * fLimit;
+						return std::atanf(boostedval * HalfPi) / HalfPi;
 						break;
 					case 6: // absolute ratio sigmoid
-						return boostedval / (1.0f + std::fabsf(boostedval)) * fLimit;
+						return boostedval / (1.0f + std::fabsf(boostedval));
 						break;
 					default: // passthrough fallback
 						return sampleval;
@@ -112,6 +113,7 @@ static AVS_Value AVSC_CC Create_AudioBoost(AVS_ScriptEnvironment* env, AVS_Value
 	const auto set_error{ [&](const char* msg)
 	{
 		avs_release_clip(clip);
+		delete d;
 
 		return avs_new_value_error(msg);
 	} };
@@ -150,7 +152,7 @@ static AVS_Value AVSC_CC Create_AudioBoost(AVS_ScriptEnvironment* env, AVS_Value
 		case 3: d->maxval = std::tanh(fBoost); break;
 		case 4: d->maxval = fBoost / sqrtf(1.0f + fBoost * fBoost); break;
 		case 5: d->maxval = std::atan(fBoost * HalfPi) / HalfPi; break;
-		case 6: d->maxval = 1.0f / (1.0f + fabs(fBoost)); break;
+		case 6: d->maxval = fBoost / (1.0f + fabs(fBoost)); break;
 		default: d->maxval = 1.0f;
 	}
 
