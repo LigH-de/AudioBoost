@@ -1,8 +1,20 @@
-// AudioBoost: Soft clipping amplifier plugin for AviSynth v2.5+ & VapourSynth v4 (c) 2024-2026, Mario *LigH* Rohkr‰mer
+// AudioBoost: Soft clipping amplifier plugin for AviSynth v2.5+ & VapourSynth v4 (c) 2024-2026, Mario *LigH* Rohkr√§mer
 // equivalent to algorithms provided by me to be used in BeSweet (c) DSPguru and HeadAC3he (c) DarkAvenger
+// some bug fixes by Myrsloik with the help of AI's by Google and Microsoft
 
 #include <algorithm>
 #include <cmath>
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
+// The AviSynth C API is looked up at runtime in the AviSynth that loads the plugin instead of being
+// imported, so the DLL doesn't depend on AviSynth.dll and VapourSynth can load it where AviSynth
+// isn't installed. This makes the header declare the API as function pointer types, and leaves out
+// its own loader, which insists on every function of the newest API being present.
+#define AVSC_NO_DECLSPEC
+#define EXTERNAL_AVS_C_API_LOADER
+#endif
 #include <avisynth_c.h>
 #include "VapourSynth4.h"
 
@@ -34,24 +46,24 @@ static inline float process_single_sample(float sampleval, float fBoost, float f
 		tval *= tval; // boostedval^2
 		tval *= tval; // boostedval^4
 		tval *= tval; // boostedval^8
-		val = boostedval / std::sqrtf(std::sqrtf(std::sqrtf(1.0f + tval))) * fLimit;
+		val = boostedval / std::sqrtf(std::sqrtf(std::sqrtf(1.0f + tval)));
 		break;
 	case 2: // Double square ratio sigmoid
 		tval *= tval; // boostedval^2
 		tval *= tval; // boostedval^4
-		val = boostedval / std::sqrtf(std::sqrtf(1.0f + tval)) * fLimit;
+		val = boostedval / std::sqrtf(std::sqrtf(1.0f + tval));
 		break;
 	case 3: // Hyperbolic tangens
-		val = std::tanhf(boostedval) * fLimit;
+		val = std::tanhf(boostedval);
 		break;
 	case 4: // Square ratio sigmoid
-		val = boostedval / std::sqrtf(1.0f + boostedval * boostedval) * fLimit;
+		val = boostedval / std::sqrtf(1.0f + boostedval * boostedval);
 		break;
 	case 5: // Scaled arcus tangens
-		val = std::atanf(boostedval * HalfPi) / HalfPi * fLimit;
+		val = std::atanf(boostedval * HalfPi) / HalfPi;
 		break;
 	case 6: // Absolute ratio sigmoid
-		val = boostedval / (1.0f + std::fabsf(boostedval)) * fLimit;
+		val = boostedval / (1.0f + std::fabsf(boostedval));
 		break;
 	default: // Passthrough fallback
 		return sampleval;
@@ -67,12 +79,50 @@ static inline float process_single_sample(float sampleval, float fBoost, float f
 // AVISYNTH C-API IMPLEMENTATION
 // ============================================================================
 
+// The AviSynth C API functions the plugin calls, filled in by load_avs_api() when AviSynth loads it
+#ifdef _WIN32
+#define AVS_API_ENTRY(name) avs_##name##_func name
+#else
+#define AVS_API_ENTRY(name) decltype(&::avs_##name) name
+#endif
+
+static struct
+{
+	AVS_API_ENTRY(add_function);
+	AVS_API_ENTRY(check_version);
+	AVS_API_ENTRY(get_audio);
+	AVS_API_ENTRY(get_video_info);
+	AVS_API_ENTRY(invoke);
+	AVS_API_ENTRY(new_c_filter);
+	AVS_API_ENTRY(release_clip);
+	AVS_API_ENTRY(release_value);
+	AVS_API_ENTRY(set_to_clip);
+	AVS_API_ENTRY(take_clip);
+} avs;
+
+static bool load_avs_api()
+{
+#ifdef _WIN32
+	// AviSynth is already loaded when it calls the plugin's entry point
+	const HMODULE lib{ GetModuleHandleW(L"AviSynth.dll") };
+	if (!lib)
+		return false;
+#define AVS_LOAD(name) (avs.name = reinterpret_cast<avs_##name##_func>(GetProcAddress(lib, "avs_" #name)))
+#else
+#define AVS_LOAD(name) (avs.name = &::avs_##name)
+#endif
+	return AVS_LOAD(add_function) && AVS_LOAD(check_version) && AVS_LOAD(get_audio) && AVS_LOAD(get_video_info) &&
+		AVS_LOAD(invoke) && AVS_LOAD(new_c_filter) && AVS_LOAD(release_clip) && AVS_LOAD(release_value) &&
+		AVS_LOAD(set_to_clip) && AVS_LOAD(take_clip);
+#undef AVS_LOAD
+}
+
 template <int iSoftness, bool bNormalize>
 static int AVSC_CC avs_get_audio_AudioBoost(AVS_FilterInfo* fi, void* buf, int64_t start, int64_t count)
 {
 	AudioBoost* d{ reinterpret_cast<AudioBoost*>(fi->user_data) };
 
-	if (avs_get_audio(fi->child, buf, start, count))
+	if (avs.get_audio(fi->child, buf, start, count))
 		return 0;
 
 	const int channels{ fi->vi.nchannels };
@@ -112,53 +162,58 @@ static AVS_Value AVSC_CC Create_AudioBoost(AVS_ScriptEnvironment* env, AVS_Value
 	AVS_Value clipVal = avs_array_elt(args, Clip);
 
 	// FIXED: Use avs_take_clip to extract the AVS_Clip pointer from the AVS_Value variant union
-	AVS_Clip* checkClip = avs_take_clip(clipVal, env);
-	const AVS_VideoInfo* vi_check = avs_get_video_info(checkClip);
+	AVS_Clip* checkClip = avs.take_clip(clipVal, env);
+	const AVS_VideoInfo* vi_check = avs.get_video_info(checkClip);
 
 	// Check if the input contains an active audio track
 	if (!vi_check || !avs_has_audio(vi_check))
 	{
-		avs_release_clip(checkClip);
+		avs.release_clip(checkClip);
 		return avs_new_value_error("AudioBoost: input clip does not have audio.");
 	}
 
 	// If sample format is not Float, call internal "ConvertAudio" via env->Invoke
+	bool converted{ false };
 	if (avs_sample_type(vi_check) != AVS_SAMPLE_FLOAT)
 	{
 		// Clean up the initial tracking clip reference before replacing it via Invoke
-		avs_release_clip(checkClip);
+		avs.release_clip(checkClip);
 
 		AVS_Value ca_args[3];
 		ca_args[0] = clipVal;
 		ca_args[1] = avs_new_value_int(AVS_SAMPLE_FLOAT); // Preferred format
 		ca_args[2] = avs_new_value_int(AVS_SAMPLE_FLOAT); // Restricted format target
 
-		AVS_Value invokeRes = avs_invoke(env, "ConvertAudio", avs_new_value_array(ca_args, 3), nullptr);
+		AVS_Value invokeRes = avs.invoke(env, "ConvertAudio", avs_new_value_array(ca_args, 3), nullptr);
 		if (avs_is_error(invokeRes))
 			return invokeRes;
 
 		clipVal = invokeRes;
+		converted = true;
 
 		// Re-track the newly converted clip structure
-		checkClip = avs_take_clip(clipVal, env);
+		checkClip = avs.take_clip(clipVal, env);
 	}
 
 	AudioBoost* d{ new AudioBoost() };
 	AVS_FilterInfo* fi;
 
 	// Create the filter using our validated clipVal structure
-	AVS_Clip* clip{ avs_new_c_filter(env, &fi, clipVal, 1) };
+	AVS_Clip* clip{ avs.new_c_filter(env, &fi, clipVal, 1) };
 
 	// Ensure the temporary reference used for info queries is released safely
-	avs_release_clip(checkClip);
+	avs.release_clip(checkClip);
+	// avs_invoke's result must be released; the filter holds its own reference to the converted clip
+	if (converted)
+		avs.release_value(clipVal);
 
 	const auto set_error{ [&](const char* msg) {
-		avs_release_clip(clip);
+		avs.release_clip(clip);
 		delete d;
 		return avs_new_value_error(msg);
 	} };
 
-	if (avs_check_version(env, 10))
+	if (avs.check_version(env, 10))
 		return set_error("AudioBoost: AviSynth+ version must be r3928 or later.");
 
 	const float fBoost{ avs_defined(avs_array_elt(args, Boost)) ? static_cast<float>(avs_as_float(avs_array_elt(args, Boost))) : 4.0f };
@@ -185,11 +240,12 @@ static AVS_Value AVSC_CC Create_AudioBoost(AVS_ScriptEnvironment* env, AVS_Value
 		case 3: d->maxval = std::tanhf(fBoost); break;
 		case 4: d->maxval = fBoost / sqrtf(1.0f + fBoost * fBoost); break;
 		case 5: d->maxval = std::atanf(fBoost * HalfPi) / HalfPi; break;
-		case 6: d->maxval = 1.0f / (1.0f + std::fabsf(fBoost)); break;
+		case 6: d->maxval = fBoost / (1.0f + std::fabsf(fBoost)); break;
 		default: d->maxval = 1.0f;
 	}
 
-	AVS_Value v{ avs_new_value_clip(clip) };
+	AVS_Value v;
+	avs.set_to_clip(&v, clip);
 	fi->user_data = reinterpret_cast<void*>(d);
 	fi->set_cache_hints = set_cache_hints_AudioBoost;
 	fi->free_filter = free_AudioBoost;
@@ -205,13 +261,16 @@ static AVS_Value AVSC_CC Create_AudioBoost(AVS_ScriptEnvironment* env, AVS_Value
 		default: fi->get_audio = (bNormalize) ? avs_get_audio_AudioBoost<0, true> : avs_get_audio_AudioBoost<0, false>;
 	}
 
-	avs_release_clip(clip);
+	avs.release_clip(clip);
 	return v;
 }
 
 const char* AVSC_CC avisynth_c_plugin_init(AVS_ScriptEnvironment* env)
 {
-	avs_add_function(env, "AudioBoost", "c[boost]f[limit]f[softness]i[norm]b", Create_AudioBoost, 0);
+	if (!load_avs_api())
+		return "AudioBoost: the AviSynth C API functions it needs are missing";
+
+	avs.add_function(env, "AudioBoost", "c[boost]f[limit]f[softness]i[norm]b", Create_AudioBoost, 0);
 
 	return "AudioBoost soft clipping amplifier";
 }
@@ -307,10 +366,10 @@ static void VS_CC vs_Create_AudioBoost(const VSMap* in, VSMap* out, void* userDa
 		vsapi->mapSetNode(invIn, "clip", inputNode, maReplace);
 		// Fixed: Map parameter set to "sampletype" utilizing the native 'stFloat' enum token
 		vsapi->mapSetInt(invIn, "sampletype", stFloat, maReplace);
-		vsapi->mapSetInt(invIn, "bitspersample", 32, maReplace); // Float audio implies 32-bit single precision
+		vsapi->mapSetInt(invIn, "bits", 32, maReplace); // Float audio implies 32-bit single precision
 
 		// Invoke standard plugin function to convert input track format
-		VSMap* invOut = vsapi->invoke(vsapi->getPluginByID("com.vapoursynth.std", core), "SetAudioFormat", invIn);
+		VSMap* invOut = vsapi->invoke(vsapi->getPluginByID("com.vapoursynth.std", core), "AudioResample", invIn);
 
 		if (vsapi->mapGetError(invOut))
 		{
@@ -358,7 +417,7 @@ static void VS_CC vs_Create_AudioBoost(const VSMap* in, VSMap* out, void* userDa
 		case 3: d->config.maxval = std::tanhf(d->config.fBoost); break;
 		case 4: d->config.maxval = d->config.fBoost / sqrtf(1.0f + d->config.fBoost * d->config.fBoost); break;
 		case 5: d->config.maxval = std::atanf(d->config.fBoost * HalfPi) / HalfPi; break;
-		case 6: d->config.maxval = 1.0f / (1.0f + std::fabsf(d->config.fBoost)); break;
+		case 6: d->config.maxval = d->config.fBoost / (1.0f + std::fabsf(d->config.fBoost)); break;
 		default: d->config.maxval = 1.0f;
 	}
 
@@ -414,12 +473,12 @@ VS_EXTERNAL_API(void) VapourSynthPluginInit2(VSPlugin* plugin, const VSPLUGINAPI
 	// Fixed: Function registration through the plugin interface
 	vspapi->registerFunction(
 		"AudioBoost",
-		"clip:clip;"
-		"boost:float:optional;"
-		"limit:float:optional;"
-		"softness:int:optional;"
-		"norm:int:optional;",
-		"clip:clip;",
+		"clip:anode;"
+		"boost:float:opt;"
+		"limit:float:opt;"
+		"softness:int:opt;"
+		"norm:int:opt;",
+		"clip:anode;",
 		vs_Create_AudioBoost,
 		nullptr,
 		plugin
