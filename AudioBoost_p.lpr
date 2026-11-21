@@ -9,7 +9,6 @@ uses
 
 const
   HalfPi: Single = 3.1415926535897932384626433832795028842 / 2.0;
-  AVS_CACHE_GET_MTMODE = 509;
 
 type
   PAudioBoost = ^TAudioBoost;
@@ -19,8 +18,6 @@ type
     maxval: Single;
   end;
 
-// Hilfsfunktion, da PChar in avisynth_c durch DelphiUnicode als PWideChar definiert ist,
-// AviSynth C-API aber PAnsiChar (8-Bit) erwartet.
 function AvsStr(const s: PAnsiChar): PChar; inline;
 begin
   Result := PChar(Pointer(s));
@@ -28,30 +25,29 @@ end;
 
 function avs_as_bool_def(v: AVS_Value; default_v: boolean): boolean; inline;
 begin
-  if v.vtype = AVS_VALUE_TYPE_BOOL
-  then Result := boolean(avs_as_bool(v))
+  if avs_defined(v) <> 0
+  then Result := avs_as_bool(v) <> 0
   else Result := default_v;
 end;
 
 function avs_as_int_def(v: AVS_Value; default_v: cint): cint; inline;
 begin
-  if v.vtype = AVS_VALUE_TYPE_INT
+  if avs_defined(v) <> 0
   then Result := avs_as_int(v)
   else Result := default_v;
 end;
 
 function avs_as_float_def(v: AVS_Value; default_v: cdouble): cdouble; inline;
 begin
-  if v.vtype = AVS_VALUE_TYPE_FLOAT
+  if avs_defined(v) <> 0
   then Result := avs_as_float(v)
   else Result := default_v;
 end;
 
 // -----------------------------------------------------------------------------
-// Generische Kern-Logik (wird per 'inline' in die 14 Varianten eingebettet)
+// Generic core logic (embedded via 'inline' into specific variants)
 // -----------------------------------------------------------------------------
-function ProcessAudioGeneric(fi: PAVS_FilterInfo; buf: Pointer; start, count: Int64;
-  const iSoftness: Integer; const bNormalize: Boolean): Integer; inline;
+function ProcessAudioGeneric(fi: PAVS_FilterInfo; buf: Pointer; start, count: Int64; const iSoftness: Integer; const bNormalize: Boolean): Integer; inline;
 var
   d: PAudioBoost;
   channels: Integer;
@@ -62,9 +58,7 @@ var
 begin
   d := PAudioBoost(fi^.user_data);
 
-  // In dieser avisynth_c.pas gibt avs_get_audio PAVS_Clip (Pointer) zurück -> <> nil prüfen
-  if avs_get_audio(fi^.child, buf, start, count) <> 0 then
-    Exit(0);
+  if avs_get_audio(fi^.child, buf, start, count) <> 0 then Exit(0);
 
   channels := fi^.vi.nchannels;
   fBoost := d^.fBoost;
@@ -123,8 +117,8 @@ begin
         val := sampleval;
       end;
 
-      if bNormalize then
-        val := val / maxval;
+      if bNormalize
+      then val := val / maxval;
 
       samples[idx] := val * fLimit;
     end;
@@ -134,7 +128,7 @@ begin
 end;
 
 // -----------------------------------------------------------------------------
-// Spezialisierte Instanzen (stdcall passend zu TGetAudioFunc in avisynth_c.pas)
+// Specialized instances (stdcall matching TGetAudioFunc in avisynth_c.pas)
 // -----------------------------------------------------------------------------
 function avs_get_audio_0_F(fi: PAVS_FilterInfo; buf: Pointer; start, count: Int64): Integer; stdcall;
 begin Result := ProcessAudioGeneric(fi, buf, start, count, 0, False); end;
@@ -190,7 +184,7 @@ const
   );
 
 // -----------------------------------------------------------------------------
-// Filter-Callbacks & Initialisierung
+// Filter callbacks & initialization
 // -----------------------------------------------------------------------------
 procedure free_AudioBoost(fi: PAVS_FilterInfo); stdcall;
 var
@@ -202,10 +196,9 @@ end;
 
 function set_cache_hints_AudioBoost(fi: PAVS_FilterInfo; cachehints: Integer; frame_range: Integer): Integer; stdcall;
 begin
-  if Integer(cachehints) = AVS_CACHE_GET_MTMODE then
-    Result := 1
-  else
-    Result := 0;
+  if cachehints = AVS_CACHE_GET_MTMODE
+  then Result := 1
+  else Result := 0;
 end;
 
 procedure Create_AudioBoost(env: PAVS_ScriptEnvironment; ret: PAVS_Value; msvc_args: AVS_Value; param: Pointer); stdcall;
@@ -239,8 +232,8 @@ begin
   New(d);
   clip := avs_new_c_filter(env, @fi, avs_array_elt(args, ArgClip), ciTrue);
 
-  // avs_check_version gibt in dieser Unit LongBool zurück (True bei Fehler/zu alter Version)
-  if avs_check_version(env, 10) = ciTrue
+  // avs_check_version returns 0 when the version is sufficient, else -1
+  if avs_check_version(env, 10) <> 0
   then begin
     SetError('AudioBoost: AviSynth+ version must be r3928 or later.');
     Exit;
@@ -302,6 +295,8 @@ begin
   fi^.free_filter := @free_AudioBoost;
   fi^.get_audio := GetAudioDispatch[iSoftness, bNormalize];
 
+  avs_release_clip(clip);
+
   ret^ := v;
 end;
 
@@ -321,7 +316,6 @@ exports
   avisynth_c_plugin_init
 {$IFDEF CPU32}
   name '_avisynth_c_plugin_init@4'
- {$ENDIF};
+{$ENDIF};
 
 end.
-
