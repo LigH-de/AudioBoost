@@ -2,7 +2,7 @@ unit avisynth_c;
 
 // Avisynth C interface unit for Pascal version 14.1
 // Created by Fredrik Mellbin (Myrsloik)
-// converted to FreePascal with Google Gemini, edited by Mario Rohkrämer (LigH)
+// converted to FreePascal with AI support, additional manual fixes
 
 {$mode objfpc}{$H+}
 {$PACKRECORDS C}
@@ -26,11 +26,7 @@ const
   {$ENDIF}
 {$ENDIF}
 
-{$IFDEF CPUX86_64}
-  AVS_FRAME_ALIGN = 64;
-{$ELSE}
-  AVS_FRAME_ALIGN = 16;
-{$ENDIF}
+  AVS_FRAME_ALIGN = 64; // FRAME_ALIGN in avs/config.h, the same on all platforms
 
 // Interface versions
   AVISYNTH_INTERFACE_CLASSIC_VERSION = 6;
@@ -507,6 +503,12 @@ type
 {$ELSE}
   {$DEFINE AVSC_CC := cdecl}
 {$ENDIF}
+{$IF DEFINED(CPUI386) AND DEFINED(MSWINDOWS)}
+  // FPC returns records larger than 4 bytes from stdcall functions through a hidden pointer
+  // (Delphi convention), MSVC returns 8-byte structs in EDX:EAX. AVS_Value is 8 bytes here, so
+  // the functions returning it are imported with an Int64 result, which both return in EDX:EAX.
+  {$DEFINE AVSC_VALUE_RESULT_AS_INT64}
+{$ENDIF}
 
   PAVS_Clip = ^AVS_Clip;
   AVS_Clip = record
@@ -560,7 +562,7 @@ type
   end;
 
   PAVS_Value = ^AVS_Value;
-  AVS_Value = packed record
+  AVS_Value = record
     vtype: cshort;
     array_size: cshort;
     d: record
@@ -582,6 +584,8 @@ type
       end;
   end;
 
+  // AviSynth never calls an AVS_ApplyFunc directly, avs_add_function registers it through a thunk
+  // (see its implementation)
   AVS_ApplyFunc = function(env: PAVS_ScriptEnvironment; args: AVS_Value; user_data: Pointer): AVS_Value; AVSC_CC;
   AVS_ApplyFuncR = procedure(env: PAVS_ScriptEnvironment; ret: PAVS_Value; args: AVS_Value; user_data: Pointer); AVSC_CC;
   AVS_ShutdownFunc = procedure(user_data: Pointer; env: PAVS_ScriptEnvironment); AVSC_CC;
@@ -652,8 +656,9 @@ function avs_component_size(const p: PAVS_VideoInfo): cint; AVSC_CC; external AV
 function avs_bits_per_component(const p: PAVS_VideoInfo): cint; AVSC_CC; external AVISYNTH_LIB;
 
 // V10 Channel mask
-function avs_is_channel_mask_known(const p: PAVS_VideoInfo): cbool; AVSC_CC; external AVISYNTH_LIB;
-procedure avs_set_channel_mask(const p: PAVS_VideoInfo; isChannelMaskKnown: cbool; dwChannelMask: cuint); AVSC_CC; external AVISYNTH_LIB;
+// C99 bool is 1 byte (Boolean); ctypes.cbool is a 4-byte LongBool
+function avs_is_channel_mask_known(const p: PAVS_VideoInfo): Boolean; AVSC_CC; external AVISYNTH_LIB;
+procedure avs_set_channel_mask(const p: PAVS_VideoInfo; isChannelMaskKnown: Boolean; dwChannelMask: cuint); AVSC_CC; external AVISYNTH_LIB;
 function avs_get_channel_mask(const p: PAVS_VideoInfo): cuint; AVSC_CC; external AVISYNTH_LIB;
 
 // V13 Pixel formats
@@ -699,7 +704,7 @@ function avs_get_as_string(v: AVS_Value): PAnsiChar; AVSC_CC; external AVISYNTH_
 function avs_get_as_float(v: AVS_Value): cdouble; AVSC_CC; external AVISYNTH_LIB;
 function avs_get_as_error(v: AVS_Value): PAnsiChar; AVSC_CC; external AVISYNTH_LIB;
 function avs_get_as_array(v: AVS_Value): PAVS_Value; AVSC_CC; external AVISYNTH_LIB;
-function avs_get_array_elt(v: AVS_Value; index: cint): AVS_Value; AVSC_CC; external AVISYNTH_LIB;
+function avs_get_array_elt(v: AVS_Value; index: cint): AVS_Value; {$IFNDEF AVSC_VALUE_RESULT_AS_INT64}AVSC_CC; external AVISYNTH_LIB;{$ENDIF}
 function avs_get_array_size(v: AVS_Value): cint; AVSC_CC; external AVISYNTH_LIB;
 procedure avs_set_to_clip(v: PAVS_Value; c: PAVS_Clip); AVSC_CC; external AVISYNTH_LIB;
 procedure avs_set_to_error(v: PAVS_Value; v0: PAnsiChar); AVSC_CC; external AVISYNTH_LIB;
@@ -731,18 +736,21 @@ function avs_get_cpu_flags_ex(e: PAVS_ScriptEnvironment): cint64; AVSC_CC; exter
 function avs_check_version(e: PAVS_ScriptEnvironment; version: cint): cint; AVSC_CC; external AVISYNTH_LIB;
 function avs_save_string(e: PAVS_ScriptEnvironment; const s: PAnsiChar; length: cint): PAnsiChar; AVSC_CC; external AVISYNTH_LIB;
 function avs_sprintf(e: PAVS_ScriptEnvironment; const fmt: PAnsiChar): PAnsiChar; cdecl; varargs; external AVISYNTH_LIB;
-function avs_add_function(e: PAVS_ScriptEnvironment; const Name, params: PAnsiChar; apply: AVS_ApplyFunc; user_data: Pointer): cint; AVSC_CC; external AVISYNTH_LIB;
+// Implemented with avs_add_function_r, needs interface V11 (AviSynth+ 3.7.4).
+// Returns -1 when more than 255 different apply/user_data pairs are registered.
+function avs_add_function(e: PAVS_ScriptEnvironment; const Name, params: PAnsiChar; apply: AVS_ApplyFunc; user_data: Pointer): cint;
 function avs_add_function_r(e: PAVS_ScriptEnvironment; const Name, params: PAnsiChar; apply: AVS_ApplyFuncR; user_data: Pointer): cint; AVSC_CC; external AVISYNTH_LIB;
 function avs_function_exists(e: PAVS_ScriptEnvironment; const Name: PAnsiChar): cint; AVSC_CC; external AVISYNTH_LIB;
-function avs_invoke(e: PAVS_ScriptEnvironment; const Name: PAnsiChar; args: AVS_Value; const arg_names: PPAnsiChar): AVS_Value; AVSC_CC; external AVISYNTH_LIB;
+function avs_invoke(e: PAVS_ScriptEnvironment; const Name: PAnsiChar; args: AVS_Value; const arg_names: PPAnsiChar): AVS_Value; {$IFNDEF AVSC_VALUE_RESULT_AS_INT64}AVSC_CC; external AVISYNTH_LIB;{$ENDIF}
 function avs_invoke_try(e: PAVS_ScriptEnvironment; Result: PAVS_Value; const Name: PAnsiChar; args: AVS_Value; const arg_names: PPAnsiChar): cint; AVSC_CC; external AVISYNTH_LIB;
-function avs_invoke2(e: PAVS_ScriptEnvironment; implicit_last: AVS_Value; const Name: PAnsiChar; args: AVS_Value; const arg_names: PPAnsiChar): AVS_Value; AVSC_CC; external AVISYNTH_LIB;
+function avs_invoke2(e: PAVS_ScriptEnvironment; implicit_last: AVS_Value; const Name: PAnsiChar; args: AVS_Value; const arg_names: PPAnsiChar): AVS_Value; {$IFNDEF AVSC_VALUE_RESULT_AS_INT64}AVSC_CC; external AVISYNTH_LIB;{$ENDIF}
 function avs_invoke2_try(e: PAVS_ScriptEnvironment; Result: PAVS_Value; implicit_last: AVS_Value; const Name: PAnsiChar; args: AVS_Value; const arg_names: PPAnsiChar): cint; AVSC_CC; external AVISYNTH_LIB;
-function avs_invoke3(e: PAVS_ScriptEnvironment; implicit_last: AVS_Value; func: AVS_Value; args: AVS_Value; const arg_names: PPAnsiChar): AVS_Value; AVSC_CC; external AVISYNTH_LIB;
+function avs_invoke3(e: PAVS_ScriptEnvironment; implicit_last: AVS_Value; func: AVS_Value; args: AVS_Value; const arg_names: PPAnsiChar): AVS_Value; {$IFNDEF AVSC_VALUE_RESULT_AS_INT64}AVSC_CC; external AVISYNTH_LIB;{$ENDIF}
 function avs_invoke3_try(e: PAVS_ScriptEnvironment; Result: PAVS_Value; implicit_last: AVS_Value; func: AVS_Value; args: AVS_Value; const arg_names: PPAnsiChar): cint; AVSC_CC; external AVISYNTH_LIB;
-function avs_get_var(e: PAVS_ScriptEnvironment; const Name: PAnsiChar): AVS_Value; AVSC_CC; external AVISYNTH_LIB;
+function avs_get_var(e: PAVS_ScriptEnvironment; const Name: PAnsiChar): AVS_Value; {$IFNDEF AVSC_VALUE_RESULT_AS_INT64}AVSC_CC; external AVISYNTH_LIB;{$ENDIF}
 function avs_set_var(e: PAVS_ScriptEnvironment; const Name: PAnsiChar; val: AVS_Value): cint; AVSC_CC; external AVISYNTH_LIB;
-function avs_set_global_var(e: PAVS_ScriptEnvironment; const Name: PAnsiChar; const val: AVS_Value): cint; AVSC_CC; external AVISYNTH_LIB;
+// val by value: with stdcall, FPC would pass a "const" record by reference
+function avs_set_global_var(e: PAVS_ScriptEnvironment; const Name: PAnsiChar; val: AVS_Value): cint; AVSC_CC; external AVISYNTH_LIB;
 function avs_new_video_frame_a(e: PAVS_ScriptEnvironment; const vi: PAVS_VideoInfo; align: cint): PAVS_VideoFrame; AVSC_CC; external AVISYNTH_LIB;
 function avs_make_writable(e: PAVS_ScriptEnvironment; pvf: PPAVS_VideoFrame): cint; AVSC_CC; external AVISYNTH_LIB;
 procedure avs_apply_message(e: PAVS_ScriptEnvironment; pvf: PPAVS_VideoFrame; const vi: PAVS_VideoInfo; const message: PAnsiChar; size, textcolor, halocolor, bgcolor: cint); AVSC_CC; external AVISYNTH_LIB;
@@ -862,6 +870,118 @@ function avs_new_video_frame(env: PAVS_ScriptEnvironment; const vi: PAVS_VideoIn
 function avs_new_frame(env: PAVS_ScriptEnvironment; const vi: PAVS_VideoInfo): PAVS_VideoFrame; inline;
 
 implementation
+
+{$IFDEF AVSC_VALUE_RESULT_AS_INT64}
+type
+  TAVS_ValueBits = record
+    case integer of
+      0: (v: AVS_Value);
+      1: (i: Int64);
+  end;
+
+function avs_get_array_elt_i64(v: AVS_Value; index: cint): Int64; AVSC_CC; external AVISYNTH_LIB name 'avs_get_array_elt';
+function avs_invoke_i64(e: PAVS_ScriptEnvironment; const Name: PAnsiChar; args: AVS_Value; const arg_names: PPAnsiChar): Int64; AVSC_CC; external AVISYNTH_LIB name 'avs_invoke';
+function avs_invoke2_i64(e: PAVS_ScriptEnvironment; implicit_last: AVS_Value; const Name: PAnsiChar; args: AVS_Value; const arg_names: PPAnsiChar): Int64; AVSC_CC; external AVISYNTH_LIB name 'avs_invoke2';
+function avs_invoke3_i64(e: PAVS_ScriptEnvironment; implicit_last: AVS_Value; func: AVS_Value; args: AVS_Value; const arg_names: PPAnsiChar): Int64; AVSC_CC; external AVISYNTH_LIB name 'avs_invoke3';
+function avs_get_var_i64(e: PAVS_ScriptEnvironment; const Name: PAnsiChar): Int64; AVSC_CC; external AVISYNTH_LIB name 'avs_get_var';
+
+function avs_get_array_elt(v: AVS_Value; index: cint): AVS_Value;
+var
+  r: TAVS_ValueBits;
+begin
+  r.i := avs_get_array_elt_i64(v, index);
+  Result := r.v;
+end;
+
+function avs_invoke(e: PAVS_ScriptEnvironment; const Name: PAnsiChar; args: AVS_Value; const arg_names: PPAnsiChar): AVS_Value;
+var
+  r: TAVS_ValueBits;
+begin
+  r.i := avs_invoke_i64(e, Name, args, arg_names);
+  Result := r.v;
+end;
+
+function avs_invoke2(e: PAVS_ScriptEnvironment; implicit_last: AVS_Value; const Name: PAnsiChar; args: AVS_Value; const arg_names: PPAnsiChar): AVS_Value;
+var
+  r: TAVS_ValueBits;
+begin
+  r.i := avs_invoke2_i64(e, implicit_last, Name, args, arg_names);
+  Result := r.v;
+end;
+
+function avs_invoke3(e: PAVS_ScriptEnvironment; implicit_last: AVS_Value; func: AVS_Value; args: AVS_Value; const arg_names: PPAnsiChar): AVS_Value;
+var
+  r: TAVS_ValueBits;
+begin
+  r.i := avs_invoke3_i64(e, implicit_last, func, args, arg_names);
+  Result := r.v;
+end;
+
+function avs_get_var(e: PAVS_ScriptEnvironment; const Name: PAnsiChar): AVS_Value;
+var
+  r: TAVS_ValueBits;
+begin
+  r.i := avs_get_var_i64(e, Name);
+  Result := r.v;
+end;
+{$ENDIF}
+
+// avs_add_function
+// AviSynth calls a thunk registered with avs_add_function_r (result through a pointer), the thunk
+// calls the AVS_ApplyFunc. FPC cannot return an AVS_Value from a callback the way MSVC-built
+// AviSynth expects: on Win32 it uses a hidden pointer instead of EDX:EAX, on Win64 (FPC 3.2.2) it
+// does not return the result address in RAX.
+// The user_data given to AviSynth is a key with a unique, nonzero lowest byte: AviSynth+ V11-V13
+// (MSVC builds) could mix up the callbacks of functions whose user_data was equal up to its first
+// zero byte, see the notes in avisynth_c.h.
+const
+  AVS_MAX_APPLY_THUNKS = 255;
+
+var
+  ApplyThunks: array[1..AVS_MAX_APPLY_THUNKS] of record
+    apply: AVS_ApplyFunc;
+    user_data: Pointer;
+  end;
+  ApplyThunkCount: Longint = 0;
+  ApplyThunkLock: Longint = 0;
+  ApplyThunkKeys: array[0..511] of Byte; // key i is the 256-aligned address in here plus i
+
+function ApplyThunkKeyBase: PtrUInt; inline;
+begin
+  Result := (PtrUInt(@ApplyThunkKeys[0]) + 255) and not PtrUInt(255);
+end;
+
+procedure avs_apply_func_thunk(env: PAVS_ScriptEnvironment; ret: PAVS_Value; args: AVS_Value; user_data: Pointer); AVSC_CC;
+var
+  i: PtrUInt;
+begin
+  i := PtrUInt(user_data) - ApplyThunkKeyBase;
+  ret^ := ApplyThunks[i].apply(env, args, ApplyThunks[i].user_data);
+end;
+
+function avs_add_function(e: PAVS_ScriptEnvironment; const Name, params: PAnsiChar; apply: AVS_ApplyFunc; user_data: Pointer): cint;
+var
+  i: Longint;
+begin
+  // find or add the apply/user_data pair, the same pair (e.g. registered again in another
+  // script environment) gets the same key
+  while InterlockedCompareExchange(ApplyThunkLock, 1, 0) <> 0 do
+    ThreadSwitch;
+  i := 1;
+  while (i <= ApplyThunkCount) and
+        not ((Pointer(ApplyThunks[i].apply) = Pointer(apply)) and (ApplyThunks[i].user_data = user_data)) do
+    Inc(i);
+  if (i > ApplyThunkCount) and (i <= AVS_MAX_APPLY_THUNKS) then
+  begin
+    ApplyThunks[i].apply := apply;
+    ApplyThunks[i].user_data := user_data;
+    ApplyThunkCount := i;
+  end;
+  InterlockedExchange(ApplyThunkLock, 0);
+  if i > AVS_MAX_APPLY_THUNKS then
+    Exit(-1);
+  Result := avs_add_function_r(e, Name, params, @avs_apply_func_thunk, Pointer(ApplyThunkKeyBase + PtrUInt(i)));
+end;
 
 function avs_has_video(const p: PAVS_VideoInfo): cint;
 begin
@@ -1195,9 +1315,7 @@ end;
 
 function avs_new_value_clip(v0: PAVS_Clip): AVS_Value;
 begin
-  Result.vtype := Ord('c');
-  Result.array_size := 0;
-  Result.d.clip := v0;
+  avs_set_to_clip(@Result, v0);
 end;
 
 function avs_new_video_frame(env: PAVS_ScriptEnvironment;
