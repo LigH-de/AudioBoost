@@ -1,5 +1,5 @@
 # AudioBoost: Soft clipping amplifier plugin for Avisynth v2.5+ and VapourSynth v4
-### (c) 2024-2026, Mario \*LigH\* Rohkrämer, contributions from Asd-g and qyot27
+### (c) 2024-2026, Mario \*LigH\* Rohkrämer, contributions from Asd-g & qyot27 & Myrsloik
 
 ## Purpose
 
